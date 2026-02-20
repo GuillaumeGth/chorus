@@ -1,0 +1,192 @@
+import { Ionicons } from '@expo/vector-icons';
+import * as Linking from 'expo-linking';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import {
+  FlatList,
+  Image,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { auth } from '../../src/config/firebase';
+import type { Chat, ChatMessage } from '../../src/services/firestore';
+import { subscribeToMessages, subscribeToChats } from '../../src/services/firestore';
+
+const PLATFORM_LABELS: Record<string, string> = {
+  spotify: 'Spotify',
+  appleMusic: 'Apple Music',
+  youtubeMusic: 'YouTube Music',
+  deezer: 'Deezer',
+  tidal: 'Tidal',
+};
+
+export default function ChatScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const uid = auth.currentUser?.uid;
+  const listRef = useRef<FlatList>(null);
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chat, setChat] = useState<Chat | null>(null);
+  const [subError, setSubError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!id) return;
+    setSubError(null);
+    const unsub = subscribeToMessages(
+      id,
+      (msgs) => {
+        setMessages(msgs);
+        setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      },
+      (error) => setSubError(error.message)
+    );
+    return unsub;
+  }, [id]);
+
+  // Get chat info for the header name
+  useEffect(() => {
+    if (!uid || !id) return;
+    const unsub = subscribeToChats(uid, (chats) => {
+      const found = chats.find((c) => c.id === id);
+      if (found) setChat(found);
+    });
+    return unsub;
+  }, [uid, id]);
+
+  const otherName = chat
+    ? chat.participantInfo[chat.participants.find((p) => p !== uid) ?? '']?.displayName
+    : '';
+
+  function renderMessage({ item }: { item: ChatMessage }) {
+    const isMe = item.senderId === uid;
+    return (
+      <View style={[styles.msgWrapper, isMe ? styles.msgWrapperMe : styles.msgWrapperOther]}>
+        {!isMe && <Text style={styles.senderName}>{item.senderName}</Text>}
+        <View style={[styles.card, isMe ? styles.cardMe : styles.cardOther]}>
+          <View style={styles.cardRow}>
+            {!!item.thumbnailUrl && (
+              <Image source={{ uri: item.thumbnailUrl }} style={styles.thumbnail} />
+            )}
+          </View>
+          <View style={styles.cardInfo}>
+            <Text style={styles.songTitle} numberOfLines={2}>{item.title}</Text>
+            <Text style={styles.artist} numberOfLines={1}>{item.artist}</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.listenBtn}
+            onPress={() => Linking.openURL(item.convertedUrl)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="play-circle" size={16} color="#000000" />
+            <Text style={styles.listenBtnText}>
+              Écouter sur {PLATFORM_LABELS[item.targetPlatform] ?? item.targetPlatform}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16 }]}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={20} color="#1db954" />
+        </TouchableOpacity>
+        <View style={styles.headerAvatar}>
+          <Text style={styles.headerAvatarText}>{otherName?.[0]?.toUpperCase()}</Text>
+        </View>
+        <Text style={styles.headerName}>{otherName}</Text>
+      </View>
+
+      {!!subError && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>Erreur Firestore : {subError}</Text>
+        </View>
+      )}
+
+      <FlatList
+        ref={listRef}
+        data={messages}
+        keyExtractor={(item) => item.id}
+        renderItem={renderMessage}
+        contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>
+              Partage un morceau depuis ton app de musique pour démarrer !
+            </Text>
+          </View>
+        }
+      />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#0d0d0d' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    gap: 12,
+  },
+  backBtn: { padding: 4 },
+  headerAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1db95420',
+    borderWidth: 1.5,
+    borderColor: '#1db95440',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarText: { color: '#1db954', fontSize: 15, fontWeight: '700' },
+  headerName: { color: '#ffffff', fontSize: 17, fontWeight: '600' },
+  list: { paddingHorizontal: 16, paddingBottom: 16 },
+  msgWrapper: { marginBottom: 16, maxWidth: '85%' },
+  msgWrapperMe: { alignSelf: 'flex-end' },
+  msgWrapperOther: { alignSelf: 'flex-start' },
+  senderName: { color: '#555555', fontSize: 12, marginBottom: 4, marginLeft: 4 },
+  card: { borderRadius: 16, overflow: 'hidden' },
+  cardMe: { backgroundColor: '#1a2e1e', borderWidth: 1, borderColor: '#1db95430' },
+  cardOther: { backgroundColor: '#1a1a1a' },
+  cardRow: { alignItems: 'flex-start', paddingTop: 8, paddingHorizontal: 10 },
+  thumbnail: { width: 75, height: 75, borderRadius: 8, backgroundColor: '#2a2a2a' },
+  cardInfo: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4 },
+  songTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 3,
+  },
+  artist: {
+    color: '#666666',
+    fontSize: 12,
+  },
+  listenBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#1db954',
+    marginHorizontal: 12,
+    marginBottom: 12,
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 13,
+  },
+  listenBtnText: { color: '#000000', fontSize: 12, fontWeight: '700', flexShrink: 1 },
+  empty: { flex: 1, alignItems: 'center', paddingTop: 60 },
+  emptyText: { color: '#444444', fontSize: 14, textAlign: 'center', lineHeight: 20 },
+  errorBanner: { backgroundColor: '#2d0000', borderRadius: 8, marginHorizontal: 16, marginBottom: 8, padding: 10 },
+  errorBannerText: { color: '#ff5555', fontSize: 12, textAlign: 'center' },
+});

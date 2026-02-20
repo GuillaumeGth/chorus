@@ -1,30 +1,111 @@
 {
   "expo": {
-    "name": "chorus",
+    "name": "Chorüs",
     "slug": "chorus",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0d0d0d"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.chorus.app"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#0d0d0d"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.chorus.app",
+      "googleServicesFile": "./google-services.json",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "https",
+              "host": "open.spotify.com"
+            },
+            {
+              "scheme": "https",
+              "host": "spotify.link"
+            },
+            {
+              "scheme": "https",
+              "host": "music.apple.com"
+            },
+            {
+              "scheme": "https",
+              "host": "music.youtube.com"
+            },
+            {
+              "scheme": "https",
+              "host": "www.deezer.com"
+            },
+            {
+              "scheme": "https",
+              "host": "deezer.com"
+            },
+            {
+              "scheme": "https",
+              "host": "tidal.com"
+            },
+            {
+              "scheme": "https",
+              "host": "listen.tidal.com"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-share-intent",
+        {
+          "iosActivationRules": {
+            "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
+            "NSExtensionActivationSupportsWebPageWithMaxCount": 1
+          },
+          "androidIntentFilters": [
+            "text/*"
+          ],
+          "androidMainActivityAttributes": {
+            "android:launchMode": "singleTask"
+          }
+        }
+      ],
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1db954",
+          "androidMode": "default"
+        }
+      ]
+    ],
+    "scheme": "chorus",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "a72a749e-8378-4cb0-9683-4aaa88e25790"
+      }
+    },
+    "owner": "guillaumed.gth"
   }
 }
