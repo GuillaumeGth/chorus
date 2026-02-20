@@ -41,6 +41,7 @@ export interface ChatMessage {
   senderName: string;
   originalUrl: string;
   convertedUrl: string;
+  platformLinks?: Partial<Record<PlatformKey, string>>;
   title: string;
   artist: string;
   thumbnailUrl: string;

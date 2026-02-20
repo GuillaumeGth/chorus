@@ -3,7 +3,7 @@ import * as Notifications from 'expo-notifications';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
-import { ShareIntentProvider } from 'expo-share-intent';
+import { ShareIntentProvider, useShareIntentContext } from 'expo-share-intent';
 import * as WebBrowser from 'expo-web-browser';
 import { useAuth } from '../src/hooks/useAuth';
 import { usePlatformPreference } from '../src/hooks/usePlatformPreference';

@@ -17,8 +17,10 @@ const PLATFORM_TO_PROVIDER: Record<PlatformKey, string> = {
   tidal: 'tidal',
 };
 
-export async function fetchLinks(url: string): Promise<OdesliResult> {
-  const response = await fetch(`${API_BASE}?url=${encodeURIComponent(url)}`);
+async function fetchLinksForCountry(url: string, userCountry: string): Promise<OdesliResult> {
+  const response = await fetch(
+    `${API_BASE}?url=${encodeURIComponent(url)}&userCountry=${userCountry}`
+  );
   if (!response.ok) {
     throw new Error(`Odesli API error: ${response.status}`);
   }
@@ -40,4 +42,35 @@ export async function fetchLinks(url: string): Promise<OdesliResult> {
   }
 
   return { title, artist, thumbnailUrl, platformLinks };
+}
+
+export type FetchProgress =
+  | { phase: 'start' }
+  | { phase: 'retry'; title: string; artist: string };
+
+export async function fetchLinks(
+  url: string,
+  targetPlatform?: PlatformKey,
+  onProgress?: (p: FetchProgress) => void,
+): Promise<OdesliResult> {
+  onProgress?.({ phase: 'start' });
+  const frResult = await fetchLinksForCountry(url, 'FR');
+
+  // Lien trouvé dès le premier essai
+  if (!targetPlatform || frResult.platformLinks[targetPlatform]) {
+    return frResult;
+  }
+
+  // Retry avec le catalogue US (plus large)
+  onProgress?.({ phase: 'retry', title: frResult.title, artist: frResult.artist });
+  try {
+    const usResult = await fetchLinksForCountry(url, 'US');
+    if (usResult.platformLinks[targetPlatform]) {
+      return usResult;
+    }
+  } catch {
+    // silently ignore, on renvoie le résultat FR
+  }
+
+  return frResult;
 }

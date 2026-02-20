@@ -51,7 +51,7 @@ export default function AuthScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top + 48, paddingBottom: insets.bottom + 24 }]}>
       <View style={styles.hero}>
-        <Text style={styles.title}>Chorüs</Text>
+        <Text style={styles.title}>Chørus</Text>
         <Text style={styles.subtitle}>
           Partage de la musique avec tes amis,{'\n'}chacun l'écoute sur sa plateforme.
         </Text>

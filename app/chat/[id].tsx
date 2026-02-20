@@ -3,6 +3,7 @@ import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   StyleSheet,
@@ -14,6 +15,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from '../../src/config/firebase';
 import type { Chat, ChatMessage } from '../../src/services/firestore';
 import { subscribeToMessages, subscribeToChats } from '../../src/services/firestore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { PlatformKey } from '../../src/services/odesli';
+import { fetchLinks } from '../../src/services/odesli';
+import { usePlatformPreference } from '../../src/hooks/usePlatformPreference';
 
 const PLATFORM_LABELS: Record<string, string> = {
   spotify: 'Spotify',
@@ -29,10 +34,12 @@ export default function ChatScreen() {
   const insets = useSafeAreaInsets();
   const uid = auth.currentUser?.uid;
   const listRef = useRef<FlatList>(null);
+  const { platform: myPlatform } = usePlatformPreference();
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chat, setChat] = useState<Chat | null>(null);
   const [subError, setSubError] = useState<string | null>(null);
+  const [fetchingId, setFetchingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -62,11 +69,39 @@ export default function ChatScreen() {
     ? chat.participantInfo[chat.participants.find((p) => p !== uid) ?? '']?.displayName
     : '';
 
+  async function handleListen(item: ChatMessage) {
+    // Always read the freshest platform preference in case it changed since mount
+    const stored = await AsyncStorage.getItem('@chorus/platform');
+    const activePlatform = (stored as PlatformKey | null) ?? myPlatform;
+
+    // Already have the right platform link stored
+    if (activePlatform && item.platformLinks?.[activePlatform]) {
+      Linking.openURL(item.platformLinks[activePlatform]!);
+      return;
+    }
+    // Fallback: re-fetch all platform links from Odesli using originalUrl
+    if (activePlatform && item.originalUrl) {
+      setFetchingId(item.id);
+      try {
+        const result = await fetchLinks(item.originalUrl);
+        const url = result.platformLinks[activePlatform] ?? item.convertedUrl;
+        Linking.openURL(url);
+      } catch {
+        Linking.openURL(item.convertedUrl);
+      } finally {
+        setFetchingId(null);
+      }
+      return;
+    }
+    Linking.openURL(item.convertedUrl);
+  }
+
   function renderMessage({ item }: { item: ChatMessage }) {
     const isMe = item.senderId === uid;
+    const listenPlatform = myPlatform ?? item.targetPlatform;
+    const isLoading = fetchingId === item.id;
     return (
       <View style={[styles.msgWrapper, isMe ? styles.msgWrapperMe : styles.msgWrapperOther]}>
-        {!isMe && <Text style={styles.senderName}>{item.senderName}</Text>}
         <View style={[styles.card, isMe ? styles.cardMe : styles.cardOther]}>
           <View style={styles.cardRow}>
             {!!item.thumbnailUrl && (
@@ -79,12 +114,17 @@ export default function ChatScreen() {
           </View>
           <TouchableOpacity
             style={styles.listenBtn}
-            onPress={() => Linking.openURL(item.convertedUrl)}
+            onPress={() => handleListen(item)}
             activeOpacity={0.8}
+            disabled={isLoading}
           >
-            <Ionicons name="play-circle" size={16} color="#000000" />
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#000000" />
+            ) : (
+              <Ionicons name="play-circle" size={16} color="#000000" />
+            )}
             <Text style={styles.listenBtnText}>
-              Écouter sur {PLATFORM_LABELS[item.targetPlatform] ?? item.targetPlatform}
+              Écouter sur {PLATFORM_LABELS[listenPlatform] ?? listenPlatform}
             </Text>
           </TouchableOpacity>
         </View>
@@ -116,6 +156,7 @@ export default function ChatScreen() {
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
+        extraData={myPlatform}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>

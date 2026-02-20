@@ -19,9 +19,10 @@ import {
   View,
 } from 'react-native';
 import { useReceivedMessages } from '../src/hooks/useReceivedMessages';
+import { useDismissedMessages } from '../src/hooks/useDismissedMessages';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from '../src/config/firebase';
-import type { OdesliResult, PlatformKey } from '../src/services/odesli';
+import type { FetchProgress, OdesliResult, PlatformKey } from '../src/services/odesli';
 import { fetchLinks } from '../src/services/odesli';
 import type { FollowEntry } from '../src/services/firestore';
 import {
@@ -31,6 +32,7 @@ import {
   sendMusicMessage,
 } from '../src/services/firestore';
 import { usePlatformPreference } from '../src/hooks/usePlatformPreference';
+import { useAuth } from '../src/hooks/useAuth';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const MOSAIC_COLS = 3;
@@ -45,6 +47,18 @@ const PLATFORM_LABELS: Record<PlatformKey, string> = {
   deezer: 'Deezer',
   tidal: 'Tidal',
 };
+
+const PLATFORM_SEARCH_URLS: Record<PlatformKey, (q: string) => string> = {
+  spotify: (q) => `https://open.spotify.com/search/${encodeURIComponent(q)}`,
+  appleMusic: (q) => `https://music.apple.com/search?term=${encodeURIComponent(q)}`,
+  youtubeMusic: (q) => `https://music.youtube.com/search?q=${encodeURIComponent(q)}`,
+  deezer: (q) => `https://www.deezer.com/search/${encodeURIComponent(q)}`,
+  tidal: (q) => `https://listen.tidal.com/search?q=${encodeURIComponent(q)}`,
+};
+
+function getSearchUrl(p: PlatformKey, title: string, artist: string): string {
+  return PLATFORM_SEARCH_URLS[p](`${title} ${artist}`);
+}
 
 const MUSIC_HOSTS = [
   'open.spotify.com', 'spotify.link', 'music.apple.com',
@@ -65,6 +79,7 @@ type Status = 'idle' | 'loading' | 'success' | 'error';
 export default function IndexScreen() {
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const { platform, loaded } = usePlatformPreference();
+  const { user: authUser, loaded: authLoaded } = useAuth();
   const { incomingUrl } = useLocalSearchParams<{ incomingUrl?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -73,6 +88,7 @@ export default function IndexScreen() {
   const [status, setStatus] = useState<Status>('idle');
   const [result, setResult] = useState<OdesliResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [loadingMsg, setLoadingMsg] = useState('');
   const [copied, setCopied] = useState(false);
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
 
@@ -84,27 +100,58 @@ export default function IndexScreen() {
   const [contactsLoaded, setContactsLoaded] = useState(false);
 
   const { messages: receivedMessages, loading: receivedLoading } = useReceivedMessages();
+  const { dismissed, dismiss, undismiss } = useDismissedMessages();
+  const [lastDismissedId, setLastDismissedId] = useState<string | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const visibleMessages = receivedMessages.filter((m) => !dismissed.has(m.id));
+
+  function handleDismiss(id: string) {
+    dismiss(id);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setLastDismissedId(id);
+    undoTimerRef.current = setTimeout(() => setLastDismissedId(null), 4000);
+  }
+
+  function handleUndismiss() {
+    if (!lastDismissedId) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undismiss(lastDismissedId);
+    setLastDismissedId(null);
+  }
 
   const lastClipboardRef = useRef<string | null>(null);
   const handledIncomingUrlRef = useRef<string | null>(null);
   const convertingRef = useRef(false);
   const pendingUrlRef = useRef<string | null>(null);
 
-  // Redirect to settings if no platform set
+  // Redirect to settings if no platform set (only when authenticated)
   useEffect(() => {
-    if (loaded && !platform) {
+    if (authLoaded && loaded && authUser && !platform) {
       router.replace('/settings');
     }
-  }, [loaded, platform]);
+  }, [authLoaded, loaded, authUser, platform]);
 
-  function startConversion(url: string) {
+  function startConversion(url: string, targetPlatform?: PlatformKey) {
     if (convertingRef.current) return;
     convertingRef.current = true;
     setStatus('loading');
+    setLoadingMsg('On cherche ce morceau…');
     setResult(null);
     setErrorMsg('');
     setClipboardUrl(null);
-    fetchLinks(url)
+
+    const platformLabel = targetPlatform ? PLATFORM_LABELS[targetPlatform] : null;
+
+    function handleProgress(p: FetchProgress) {
+      if (p.phase === 'retry') {
+        const name = p.title && p.title !== 'Unknown title' ? `« ${p.title} »` : 'Ce morceau';
+        const suffix = platformLabel ? ` sur ${platformLabel}` : '';
+        setLoadingMsg(`${name} trouvé !\nOn cherche le lien${suffix}…`);
+      }
+    }
+
+    fetchLinks(url, targetPlatform, handleProgress)
       .then((data) => { convertingRef.current = false; setResult(data); setStatus('success'); })
       .catch((err) => { convertingRef.current = false; setErrorMsg(err.message ?? 'Unknown error'); setStatus('error'); });
   }
@@ -169,7 +216,7 @@ export default function IndexScreen() {
 
     if (!contact) {
       setSelectedContact(null);
-      startConversion(url);
+      startConversion(url, platform ?? undefined);
       return;
     }
 
@@ -184,7 +231,7 @@ export default function IndexScreen() {
     }
 
     setSelectedContact({ ...contact, platform: resolvedPlatform });
-    startConversion(url);
+    startConversion(url, resolvedPlatform);
   }
 
   async function handleSendToContact() {
@@ -210,6 +257,7 @@ export default function IndexScreen() {
         senderName: currentUser.displayName ?? currentUser.email ?? 'Moi',
         originalUrl: pendingUrlRef.current,
         convertedUrl,
+        platformLinks: result.platformLinks,
         title: result.title,
         artist: result.artist,
         thumbnailUrl: result.thumbnailUrl,
@@ -268,7 +316,7 @@ export default function IndexScreen() {
     <View style={[styles.container, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.appName}>Chorüs</Text>
+        <Text style={styles.appName}>Chørus</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={() => router.push('/search')} style={styles.iconBtn}>
             <Ionicons name="person-add-outline" size={22} color="#ffffff" />
@@ -319,7 +367,7 @@ export default function IndexScreen() {
             <Ionicons name="search-outline" size={16} color="#555555" />
             <TextInput
               style={styles.searchInput}
-              placeholder="Rechercher un contact Chorüs…"
+              placeholder="Rechercher un contact Chørus…"
               placeholderTextColor="#444444"
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -373,7 +421,7 @@ export default function IndexScreen() {
       {status === 'loading' && (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#1db954" />
-          <Text style={styles.loadingText}>Conversion en cours…</Text>
+          <Text style={styles.loadingText}>{loadingMsg}</Text>
         </View>
       )}
 
@@ -415,17 +463,36 @@ export default function IndexScreen() {
                 </TouchableOpacity>
               )
             ) : (
-              <Text style={styles.noLinkText}>
-                Morceau non disponible sur {PLATFORM_LABELS[selectedContact.platform ?? 'spotify']}.
-              </Text>
+              <>
+                <Text style={styles.noLinkText}>
+                  Lien introuvable dans notre base pour {PLATFORM_LABELS[selectedContact.platform ?? 'spotify']}.{'\n'}Cherche-le directement :
+                </Text>
+                <TouchableOpacity
+                  style={styles.secondaryBtn}
+                  onPress={() => Linking.openURL(getSearchUrl(selectedContact.platform!, result.title, result.artist))}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.secondaryBtnText}>Rechercher sur {PLATFORM_LABELS[selectedContact.platform ?? 'spotify']}</Text>
+                </TouchableOpacity>
+              </>
             )
           ) : (
             <>
-              <TouchableOpacity style={styles.primaryBtn} onPress={handleOpen} activeOpacity={0.8}>
-                <Text style={styles.primaryBtnText}>
-                  Ouvrir dans {platform ? PLATFORM_LABELS[platform] : "l'app"}
-                </Text>
-              </TouchableOpacity>
+              {convertedForSelf ? (
+                <TouchableOpacity style={styles.primaryBtn} onPress={handleOpen} activeOpacity={0.8}>
+                  <Text style={styles.primaryBtnText}>
+                    Ouvrir dans {platform ? PLATFORM_LABELS[platform] : "l'app"}
+                  </Text>
+                </TouchableOpacity>
+              ) : platform ? (
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={() => Linking.openURL(getSearchUrl(platform, result.title, result.artist))}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.primaryBtnText}>Rechercher sur {PLATFORM_LABELS[platform]}</Text>
+                </TouchableOpacity>
+              ) : null}
               <TouchableOpacity style={styles.secondaryBtn} onPress={handleShareSelf} activeOpacity={0.8}>
                 <Text style={styles.secondaryBtnText}>Partager</Text>
               </TouchableOpacity>
@@ -447,29 +514,37 @@ export default function IndexScreen() {
           <View style={styles.center}>
             <ActivityIndicator size="large" color="#1db954" />
           </View>
-        ) : receivedMessages.length > 0 ? (
+        ) : visibleMessages.length > 0 ? (
           <FlatList
-            data={receivedMessages}
+            data={visibleMessages}
             keyExtractor={(item) => item.id}
             numColumns={MOSAIC_COLS}
             columnWrapperStyle={styles.mosaicRow}
             contentContainerStyle={styles.mosaicContent}
             style={styles.mosaicList}
             renderItem={({ item }) => (
-              <TouchableOpacity
-                style={styles.mosaicCell}
-                onPress={() => Linking.openURL(item.convertedUrl)}
-                activeOpacity={0.85}
-              >
-                <Image
-                  source={{ uri: item.thumbnailUrl }}
-                  style={styles.mosaicThumb}
-                />
-                <View style={styles.mosaicInfo}>
-                  <Text style={styles.mosaicTitle} numberOfLines={1}>{item.title}</Text>
-                  <Text style={styles.mosaicSender} numberOfLines={1}>{item.senderName}</Text>
-                </View>
-              </TouchableOpacity>
+              <View style={styles.mosaicCell}>
+                <TouchableOpacity
+                  onPress={() => Linking.openURL(item.convertedUrl)}
+                  activeOpacity={0.85}
+                >
+                  <Image
+                    source={{ uri: item.thumbnailUrl }}
+                    style={styles.mosaicThumb}
+                  />
+                  <View style={styles.mosaicInfo}>
+                    <Text style={styles.mosaicTitle} numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.mosaicSender} numberOfLines={1}>{item.senderName}</Text>
+                  </View>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.mosaicDismissBtn}
+                  onPress={() => handleDismiss(item.id)}
+                  hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+                >
+                  <Ionicons name="close" size={13} color="#ffffff" />
+                </TouchableOpacity>
+              </View>
             )}
           />
         ) : (
@@ -487,8 +562,8 @@ export default function IndexScreen() {
               <View style={styles.step}>
                 <View style={styles.stepBadge}><Text style={styles.stepNumber}>2</Text></View>
                 <View style={styles.stepBody}>
-                  <Text style={styles.stepTitle}>Partage vers Chorüs</Text>
-                  <Text style={styles.stepDesc}>Tape <Text style={styles.bold}>Partager</Text> → choisis <Text style={styles.bold}>Chorüs</Text>.</Text>
+                  <Text style={styles.stepTitle}>Partage vers Chørus</Text>
+                  <Text style={styles.stepDesc}>Tape <Text style={styles.bold}>Partager</Text> → choisis <Text style={styles.bold}>Chørus</Text>.</Text>
                 </View>
               </View>
               <View style={styles.stepConnector} />
@@ -502,6 +577,16 @@ export default function IndexScreen() {
             </View>
           </View>
         )
+      )}
+
+      {/* Undo toast */}
+      {lastDismissedId && (
+        <View style={[styles.undoToast, { bottom: insets.bottom + 16 }]}>
+          <Text style={styles.undoToastText}>Morceau masqué</Text>
+          <TouchableOpacity onPress={handleUndismiss} style={styles.undoBtn}>
+            <Text style={styles.undoBtnText}>Annuler</Text>
+          </TouchableOpacity>
+        </View>
       )}
     </View>
   );
@@ -564,7 +649,7 @@ const styles = StyleSheet.create({
   cancelShareBtn: { alignItems: 'center', paddingVertical: 14 },
   cancelShareBtnText: { color: '#444444', fontSize: 14 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 16, color: '#888888', fontSize: 15 },
+  loadingText: { marginTop: 16, color: '#888888', fontSize: 15, textAlign: 'center', lineHeight: 22 },
   errorText: { color: '#ff5555', fontSize: 18, fontWeight: '600', marginBottom: 8, textAlign: 'center' },
   errorDetail: { color: '#888888', fontSize: 13, textAlign: 'center', marginBottom: 24 },
   retryBtn: { paddingHorizontal: 28, paddingVertical: 12, backgroundColor: '#1a1a1a', borderRadius: 10 },
@@ -594,7 +679,13 @@ const styles = StyleSheet.create({
   mosaicList: { marginHorizontal: -(24 - MOSAIC_SIDE) },
   mosaicContent: { paddingBottom: 16 },
   mosaicRow: { gap: MOSAIC_GAP, marginBottom: MOSAIC_GAP },
-  mosaicCell: { width: CELL_SIZE, borderRadius: 8, overflow: 'hidden', backgroundColor: '#1a1a1a' },
+  mosaicCell: { width: CELL_SIZE, borderRadius: 8, overflow: 'hidden', backgroundColor: '#1a1a1a', position: 'relative' },
+  mosaicDismissBtn: {
+    position: 'absolute', top: 5, right: 5,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    alignItems: 'center', justifyContent: 'center',
+  },
   mosaicThumb: { width: CELL_SIZE, height: CELL_SIZE, backgroundColor: '#2a2a2a' },
   mosaicInfo: { padding: 6 },
   mosaicTitle: { color: '#ffffff', fontSize: 11, fontWeight: '600' },
@@ -613,4 +704,12 @@ const styles = StyleSheet.create({
   stepDesc: { fontSize: 13, color: '#666666', lineHeight: 19 },
   bold: { color: '#aaaaaa', fontWeight: '600' },
   accent: { color: '#1db954', fontWeight: '600' },
+  undoToast: {
+    position: 'absolute', left: 24, right: 24,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#2a2a2a', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16,
+  },
+  undoToastText: { color: '#aaaaaa', fontSize: 14 },
+  undoBtn: { paddingVertical: 4, paddingHorizontal: 10 },
+  undoBtnText: { color: '#1db954', fontSize: 14, fontWeight: '700' },
 });

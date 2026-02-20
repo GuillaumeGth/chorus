@@ -37,8 +37,8 @@ export const onNewMessage = onDocumentCreated(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         to: expoPushToken,
-        title: `🎵 ${senderName}`,
-        body: `${title} · ${artist}`,
+        title: `Nouveau morceau de ${senderName}`,
+        body: `${title} - ${artist}`,
         data: { chatId },
         sound: 'default',
       }),

@@ -66,7 +66,7 @@ export default function ContactsScreen() {
             <Ionicons name="person-add-outline" size={20} color="#1db954" />
           </TouchableOpacity>
         </View>
-        <Text style={styles.subtitle}>Les personnes que tu suis sur Chorüs.</Text>
+        <Text style={styles.subtitle}>Les personnes que tu suis sur Chørus.</Text>
       </View>
 
       {loading ? (
