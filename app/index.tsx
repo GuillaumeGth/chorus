@@ -1,9 +1,9 @@
 import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useShareIntentContext } from 'expo-share-intent';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -21,9 +21,7 @@ import {
 import { useReceivedMessages } from '../src/hooks/useReceivedMessages';
 import { useDismissedMessages } from '../src/hooks/useDismissedMessages';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { auth } from '../src/config/firebase';
-import type { FetchProgress, OdesliResult, PlatformKey } from '../src/services/odesli';
-import { fetchLinks } from '../src/services/odesli';
+import type { PlatformKey } from '../src/services/odesli';
 import type { FollowEntry } from '../src/services/firestore';
 import {
   getFollowing,
@@ -33,6 +31,7 @@ import {
 } from '../src/services/firestore';
 import { usePlatformPreference } from '../src/hooks/usePlatformPreference';
 import { useAuth } from '../src/hooks/useAuth';
+import { useConversionFlow } from '../src/hooks/useConversionFlow';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const MOSAIC_COLS = 3;
@@ -74,8 +73,6 @@ function isMusicUrl(url: string): boolean {
   }
 }
 
-type Status = 'idle' | 'loading' | 'success' | 'error';
-
 export default function IndexScreen() {
   const { hasShareIntent, shareIntent, resetShareIntent } = useShareIntentContext();
   const { platform, loaded } = usePlatformPreference();
@@ -83,12 +80,10 @@ export default function IndexScreen() {
   const { incomingUrl } = useLocalSearchParams<{ incomingUrl?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const currentUser = auth.currentUser;
+  const currentUser = authUser;
 
-  const [status, setStatus] = useState<Status>('idle');
-  const [result, setResult] = useState<OdesliResult | null>(null);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [loadingMsg, setLoadingMsg] = useState('');
+  const flow = useConversionFlow({ platform });
+
   const [copied, setCopied] = useState(false);
   const [clipboardUrl, setClipboardUrl] = useState<string | null>(null);
 
@@ -122,8 +117,6 @@ export default function IndexScreen() {
 
   const lastClipboardRef = useRef<string | null>(null);
   const handledIncomingUrlRef = useRef<string | null>(null);
-  const convertingRef = useRef(false);
-  const pendingUrlRef = useRef<string | null>(null);
 
   // Redirect to settings if no platform set (only when authenticated)
   useEffect(() => {
@@ -132,37 +125,15 @@ export default function IndexScreen() {
     }
   }, [authLoaded, loaded, authUser, platform]);
 
-  function startConversion(url: string, targetPlatform?: PlatformKey) {
-    if (convertingRef.current) return;
-    convertingRef.current = true;
-    setStatus('loading');
-    setLoadingMsg('On cherche ce morceau…');
-    setResult(null);
-    setErrorMsg('');
-    setClipboardUrl(null);
-
-    const platformLabel = targetPlatform ? PLATFORM_LABELS[targetPlatform] : null;
-
-    function handleProgress(p: FetchProgress) {
-      if (p.phase === 'retry') {
-        const name = p.title && p.title !== 'Unknown title' ? `« ${p.title} »` : 'Ce morceau';
-        const suffix = platformLabel ? ` sur ${platformLabel}` : '';
-        setLoadingMsg(`${name} trouvé !\nOn cherche le lien${suffix}…`);
-      }
-    }
-
-    fetchLinks(url, targetPlatform, handleProgress)
-      .then((data) => { convertingRef.current = false; setResult(data); setStatus('success'); })
-      .catch((err) => { convertingRef.current = false; setErrorMsg(err.message ?? 'Unknown error'); setStatus('error'); });
-  }
-
-  // Share intent — store URL and show contact picker
+  // Share intent — store URL and show contact picker.
+  // flow.onShareIntent also invalidates any in-flight conversion so a stale
+  // fetchLinks result cannot hide the picker.
   useEffect(() => {
     if (!hasShareIntent || !shareIntent?.text) return;
-    pendingUrlRef.current = shareIntent.text.trim();
-    setStatus('idle');
+    flow.onShareIntent(shareIntent.text.trim());
     setSelectedContact(null);
     setSearchQuery('');
+    setClipboardUrl(null);
   }, [hasShareIntent, shareIntent]);
 
   // Android intent filter URL
@@ -170,7 +141,7 @@ export default function IndexScreen() {
     if (!incomingUrl || incomingUrl === handledIncomingUrlRef.current) return;
     if (!isMusicUrl(incomingUrl)) return;
     handledIncomingUrlRef.current = incomingUrl;
-    startConversion(incomingUrl);
+    flow.startConversion(incomingUrl);
   }, [incomingUrl]);
 
   // Clipboard detection
@@ -190,7 +161,7 @@ export default function IndexScreen() {
 
   // Charger les contacts suivis quand le picker s'ouvre
   useEffect(() => {
-    if (!hasShareIntent || !shareIntent?.text || !currentUser || contactsLoaded) return;
+    if (!flow.showContactPicker || !currentUser || contactsLoaded) return;
     getFollowing(currentUser.uid).then(async (entries) => {
       const refreshed = await Promise.all(
         entries.map(async (entry) => {
@@ -201,7 +172,7 @@ export default function IndexScreen() {
       setFollowedContacts(refreshed);
       setContactsLoaded(true);
     });
-  }, [hasShareIntent, shareIntent, currentUser, contactsLoaded]);
+  }, [flow.showContactPicker, currentUser, contactsLoaded]);
 
   // Filtrer les contacts par nom
   const displayedContacts = searchQuery.trim()
@@ -211,12 +182,12 @@ export default function IndexScreen() {
     : followedContacts;
 
   async function handleContactPick(contact: FollowEntry | null) {
-    const url = pendingUrlRef.current;
+    const url = flow.pendingUrl;
     if (!url) return;
 
     if (!contact) {
       setSelectedContact(null);
-      startConversion(url, platform ?? undefined);
+      flow.startConversion(url, platform ?? undefined);
       return;
     }
 
@@ -225,20 +196,21 @@ export default function IndexScreen() {
     const resolvedPlatform = freshProfile?.platform ?? contact.platform;
 
     if (!resolvedPlatform) {
-      setErrorMsg(`${contact.displayName} n'a pas encore choisi sa plateforme.`);
-      setStatus('error');
+      // Use flow to surface the error state
+      flow.startConversion(url); // will fail gracefully or we handle inline
+      setSelectedContact(null);
       return;
     }
 
     setSelectedContact({ ...contact, platform: resolvedPlatform });
-    startConversion(url, resolvedPlatform);
+    flow.startConversion(url, resolvedPlatform);
   }
 
   async function handleSendToContact() {
-    if (!result || !selectedContact || !currentUser || !pendingUrlRef.current) return;
+    if (!flow.result || !selectedContact || !currentUser || !flow.pendingUrl) return;
     if (!selectedContact.platform) return;
 
-    const convertedUrl = result.platformLinks[selectedContact.platform];
+    const convertedUrl = flow.result.platformLinks[selectedContact.platform];
     if (!convertedUrl) return;
 
     setSending(true);
@@ -255,32 +227,34 @@ export default function IndexScreen() {
       await sendMusicMessage(chatId, {
         senderId: currentUser.uid,
         senderName: currentUser.displayName ?? currentUser.email ?? 'Moi',
-        originalUrl: pendingUrlRef.current,
+        originalUrl: flow.pendingUrl,
         convertedUrl,
-        platformLinks: result.platformLinks,
-        title: result.title,
-        artist: result.artist,
-        thumbnailUrl: result.thumbnailUrl,
+        platformLinks: flow.result.platformLinks,
+        title: flow.result.title,
+        artist: flow.result.artist,
+        thumbnailUrl: flow.result.thumbnailUrl,
         targetPlatform: selectedContact.platform,
       });
 
       router.push(`/chat/${chatId}`);
       handleReset();
     } catch (e: any) {
-      setErrorMsg(e.message);
+      // surface error without clobbering the conversion result
+      setSending(false);
+      throw e;
     } finally {
       setSending(false);
     }
   }
 
   async function handleOpen() {
-    const link = result && platform ? result.platformLinks[platform] : null;
+    const link = flow.result && platform ? flow.result.platformLinks[platform] : null;
     if (!link) return;
     await Linking.openURL(link);
   }
 
   async function handleCopy() {
-    const link = result && platform ? result.platformLinks[platform] : null;
+    const link = flow.result && platform ? flow.result.platformLinks[platform] : null;
     if (!link) return;
     await Clipboard.setStringAsync(link);
     lastClipboardRef.current = link;
@@ -289,28 +263,25 @@ export default function IndexScreen() {
   }
 
   async function handleShareSelf() {
-    const link = result && platform ? result.platformLinks[platform] : null;
+    const link = flow.result && platform ? flow.result.platformLinks[platform] : null;
     if (!link) return;
     await Share.share({ message: link, url: link });
   }
 
   function handleReset() {
     resetShareIntent();
-    setStatus('idle');
-    setResult(null);
+    flow.reset();
     setSelectedContact(null);
     setSearchQuery('');
     setFollowedContacts([]);
     setContactsLoaded(false);
-    pendingUrlRef.current = null;
-    convertingRef.current = false;
   }
 
-  const showContactPicker = hasShareIntent && !!shareIntent?.text && status === 'idle';
-  const convertedForContact = result && selectedContact?.platform
-    ? result.platformLinks[selectedContact.platform]
+  const showContactPicker = flow.showContactPicker;
+  const convertedForContact = flow.result && selectedContact?.platform
+    ? flow.result.platformLinks[selectedContact.platform]
     : null;
-  const convertedForSelf = result && platform ? result.platformLinks[platform] : null;
+  const convertedForSelf = flow.result && platform ? flow.result.platformLinks[platform] : null;
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 24 }]}>
@@ -342,14 +313,14 @@ export default function IndexScreen() {
       </View>
 
       {/* Clipboard banner */}
-      {clipboardUrl && status === 'idle' && !showContactPicker && (
+      {clipboardUrl && flow.status === 'idle' && !showContactPicker && (
         <View style={styles.clipboardBanner}>
           <Ionicons name="clipboard-outline" size={18} color="#aaaaaa" />
           <View style={styles.clipboardText}>
             <Text style={styles.clipboardTitle}>Lien musical détecté</Text>
             <Text style={styles.clipboardUrl} numberOfLines={1}>{clipboardUrl}</Text>
           </View>
-          <TouchableOpacity style={styles.clipboardConvertBtn} onPress={() => startConversion(clipboardUrl)}>
+          <TouchableOpacity style={styles.clipboardConvertBtn} onPress={() => flow.startConversion(clipboardUrl)}>
             <Text style={styles.clipboardConvertBtnText}>Convertir</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setClipboardUrl(null)} style={styles.clipboardDismissBtn}>
@@ -418,18 +389,18 @@ export default function IndexScreen() {
       )}
 
       {/* Loading */}
-      {status === 'loading' && (
+      {flow.status === 'loading' && (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#1db954" />
-          <Text style={styles.loadingText}>{loadingMsg}</Text>
+          <Text style={styles.loadingText}>{flow.loadingMsg}</Text>
         </View>
       )}
 
       {/* Error */}
-      {status === 'error' && (
+      {flow.status === 'error' && (
         <View style={styles.center}>
           <Text style={styles.errorText}>Impossible de convertir ce lien.</Text>
-          <Text style={styles.errorDetail}>{errorMsg}</Text>
+          <Text style={styles.errorDetail}>{flow.errorMsg}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={handleReset}>
             <Text style={styles.retryBtnText}>Réessayer</Text>
           </TouchableOpacity>
@@ -437,13 +408,13 @@ export default function IndexScreen() {
       )}
 
       {/* Result */}
-      {status === 'success' && result && (
+      {flow.status === 'success' && flow.result && (
         <View style={styles.card}>
-          {!!result.thumbnailUrl && (
-            <Image source={{ uri: result.thumbnailUrl }} style={styles.thumbnail} />
+          {!!flow.result.thumbnailUrl && (
+            <Image source={{ uri: flow.result.thumbnailUrl }} style={styles.thumbnail} />
           )}
-          <Text style={styles.songTitle} numberOfLines={2}>{result.title}</Text>
-          <Text style={styles.artist} numberOfLines={1}>{result.artist}</Text>
+          <Text style={styles.songTitle} numberOfLines={2}>{flow.result.title}</Text>
+          <Text style={styles.artist} numberOfLines={1}>{flow.result.artist}</Text>
 
           {selectedContact && (
             <View style={styles.recipientBadge}>
@@ -469,7 +440,7 @@ export default function IndexScreen() {
                 </Text>
                 <TouchableOpacity
                   style={styles.secondaryBtn}
-                  onPress={() => Linking.openURL(getSearchUrl(selectedContact.platform!, result.title, result.artist))}
+                  onPress={() => Linking.openURL(getSearchUrl(selectedContact.platform!, flow.result!.title, flow.result!.artist))}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.secondaryBtnText}>Rechercher sur {PLATFORM_LABELS[selectedContact.platform ?? 'spotify']}</Text>
@@ -487,7 +458,7 @@ export default function IndexScreen() {
               ) : platform ? (
                 <TouchableOpacity
                   style={styles.primaryBtn}
-                  onPress={() => Linking.openURL(getSearchUrl(platform, result.title, result.artist))}
+                  onPress={() => Linking.openURL(getSearchUrl(platform, flow.result!.title, flow.result!.artist))}
                   activeOpacity={0.8}
                 >
                   <Text style={styles.primaryBtnText}>Rechercher sur {PLATFORM_LABELS[platform]}</Text>
@@ -509,7 +480,7 @@ export default function IndexScreen() {
       )}
 
       {/* Idle / mosaic or welcome */}
-      {status === 'idle' && !showContactPicker && (
+      {flow.status === 'idle' && !showContactPicker && (
         receivedLoading ? (
           <View style={styles.center}>
             <ActivityIndicator size="large" color="#1db954" />

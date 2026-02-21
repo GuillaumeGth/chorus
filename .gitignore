@@ -35,7 +35,6 @@ yarn-error.*
 .env
 
 # Firebase
-google-services.json
 firebase-debug.log
 .firebaserc
 

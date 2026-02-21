@@ -1,0 +1,63 @@
+{
+  "project_info": {
+    "project_number": "380791680025",
+    "project_id": "chorus-107de",
+    "storage_bucket": "chorus-107de.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:380791680025:android:5d8f479e8700ab46dd8e88",
+        "android_client_info": {
+          "package_name": "com.chorus.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "380791680025-0jp9chtp4vp4ufi52je8a8c72e0g0p86.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.chorus.app",
+            "certificate_hash": "2a98498240113c86b87b4ff40bca35b64ab93855"
+          }
+        },
+        {
+          "client_id": "380791680025-3pdftrlgvfn5p5n0h1n4r20aal9miopg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.chorus.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "380791680025-fmj0uuk7mkk6utbmjdhume8dhmb02600.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.chorus.app",
+            "certificate_hash": "2614c1e2c3dd63728d7ade171fe61d6b986a74b6"
+          }
+        },
+        {
+          "client_id": "380791680025-pj478637ichhh4eeokl41ju1sufg76a1.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgrxqvFqOQG-XVndhQDlUEaah0j_PytJI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "380791680025-pj478637ichhh4eeokl41ju1sufg76a1.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
