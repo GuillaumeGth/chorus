@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import type { FetchProgress, OdesliResult, PlatformKey } from '../services/odesli';
+import type { OdesliResult, PlatformKey } from '../services/odesli';
 import { fetchLinks as defaultFetchLinks } from '../services/odesli';
 
 export type ConversionStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -7,16 +7,7 @@ export type ConversionStatus = 'idle' | 'loading' | 'success' | 'error';
 export type FetchFn = (
   url: string,
   platform?: PlatformKey,
-  onProgress?: (p: FetchProgress) => void,
 ) => Promise<OdesliResult>;
-
-const PLATFORM_LABELS: Record<PlatformKey, string> = {
-  spotify: 'Spotify',
-  appleMusic: 'Apple Music',
-  youtubeMusic: 'YouTube Music',
-  deezer: 'Deezer',
-  tidal: 'Tidal',
-};
 
 /**
  * Manages the music-link conversion state machine.
@@ -69,19 +60,7 @@ export function useConversionFlow({
     setErrorMsg('');
     setLoadingMsg('On cherche ce morceau…');
 
-    const platformLabel = targetPlatform ? PLATFORM_LABELS[targetPlatform] : null;
-
-    function handleProgress(p: FetchProgress) {
-      if (generationRef.current !== gen) return;
-      if (p.phase === 'retry') {
-        const name =
-          p.title && p.title !== 'Unknown title' ? `« ${p.title} »` : 'Ce morceau';
-        const suffix = platformLabel ? ` sur ${platformLabel}` : '';
-        setLoadingMsg(`${name} trouvé !\nOn cherche le lien${suffix}…`);
-      }
-    }
-
-    fetchFn(url, targetPlatform, handleProgress)
+    fetchFn(url, targetPlatform)
       .then((data) => {
         if (generationRef.current !== gen) return; // stale – discard
         convertingRef.current = false;

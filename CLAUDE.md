@@ -1,9 +1,9 @@
-# Chorüs – CLAUDE.md
+# Chørus – CLAUDE.md
 
 ## Project overview
-React Native app (Expo 54, expo-router) for sharing music between friends across streaming platforms. The user shares a link from any streaming app, Chorüs converts it to the recipient's preferred platform and sends it via an in-app chat.
+React Native app (Expo 54, expo-router) for sharing music between friends across streaming platforms. The user shares a link from any streaming app, Chørus converts it to the recipient's preferred platform and sends it via an in-app chat.
 
-**Core flow:** Alice (Spotify) shares a track → chooses Bob in Chorüs → Chorüs converts to Bob's platform (YouTube Music) → sends the converted link in a chat → Bob opens it directly in his app.
+**Core flow:** Alice (Spotify) shares a track → chooses Bob in Chørus → Chørus converts to Bob's platform (YouTube Music) → sends the converted link in a chat → Bob opens it directly in his app.
 
 ## Tech stack
 - **Expo 54** with **expo-router 6** (file-based routing, `"main": "expo-router/entry"`)
