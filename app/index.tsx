@@ -11,6 +11,7 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Modal,
   Share,
   StyleSheet,
   Text,
@@ -22,12 +23,13 @@ import { useReceivedMessages } from '../src/hooks/useReceivedMessages';
 import { useDismissedMessages } from '../src/hooks/useDismissedMessages';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PlatformKey } from '../src/services/odesli';
-import type { FollowEntry } from '../src/services/firestore';
+import type { FollowEntry, ReactionType, ReceivedMessage } from '../src/services/firestore';
 import {
   getFollowing,
   getUserProfile,
   getOrCreateChat,
   sendMusicMessage,
+  setMessageReaction,
 } from '../src/services/firestore';
 import { usePlatformPreference } from '../src/hooks/usePlatformPreference';
 import { useAuth } from '../src/hooks/useAuth';
@@ -38,6 +40,13 @@ const MOSAIC_COLS = 3;
 const MOSAIC_GAP = 3;
 const MOSAIC_SIDE = 8;
 const CELL_SIZE = (SCREEN_WIDTH - MOSAIC_SIDE * 2 - MOSAIC_GAP * (MOSAIC_COLS - 1)) / MOSAIC_COLS;
+
+const REACTIONS: Array<{ type: ReactionType; emoji: string; label: string }> = [
+  { type: 'like',      emoji: '❤️',  label: "J'aime" },
+  { type: 'superlike', emoji: '🔥',  label: 'Super' },
+  { type: 'wow',       emoji: '😮',  label: 'Wow' },
+  { type: 'dislike',   emoji: '👎',  label: 'Bof' },
+];
 
 const PLATFORM_LABELS: Record<PlatformKey, string> = {
   spotify: 'Spotify',
@@ -99,7 +108,30 @@ export default function IndexScreen() {
   const [lastDismissedId, setLastDismissedId] = useState<string | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [reactionTarget, setReactionTarget] = useState<ReceivedMessage | null>(null);
+  const [localReactions, setLocalReactions] = useState<Record<string, ReactionType | null>>({});
+
   const visibleMessages = receivedMessages.filter((m) => !dismissed.has(m.id));
+
+  function getMyReaction(item: ReceivedMessage): ReactionType | null {
+    if (item.id in localReactions) return localReactions[item.id];
+    return (item.reactions?.[currentUser?.uid ?? ''] as ReactionType) ?? null;
+  }
+
+  async function handleReact(msg: ReceivedMessage, reaction: ReactionType | null) {
+    if (!currentUser) return;
+    setLocalReactions((prev) => ({ ...prev, [msg.id]: reaction }));
+    setReactionTarget(null);
+    try {
+      await setMessageReaction(msg.chatId, msg.id, currentUser.uid, reaction);
+    } catch {
+      setLocalReactions((prev) => {
+        const next = { ...prev };
+        delete next[msg.id];
+        return next;
+      });
+    }
+  }
 
   function handleDismiss(id: string) {
     dismiss(id);
@@ -493,30 +525,46 @@ export default function IndexScreen() {
             columnWrapperStyle={styles.mosaicRow}
             contentContainerStyle={styles.mosaicContent}
             style={styles.mosaicList}
-            renderItem={({ item }) => (
-              <View style={styles.mosaicCell}>
-                <TouchableOpacity
-                  onPress={() => Linking.openURL(item.convertedUrl)}
-                  activeOpacity={0.85}
-                >
-                  <Image
-                    source={{ uri: item.thumbnailUrl }}
-                    style={styles.mosaicThumb}
-                  />
-                  <View style={styles.mosaicInfo}>
-                    <Text style={styles.mosaicTitle} numberOfLines={1}>{item.title}</Text>
-                    <Text style={styles.mosaicSender} numberOfLines={1}>{item.senderName}</Text>
-                  </View>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.mosaicDismissBtn}
-                  onPress={() => handleDismiss(item.id)}
-                  hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
-                >
-                  <Ionicons name="close" size={13} color="#ffffff" />
-                </TouchableOpacity>
-              </View>
-            )}
+            renderItem={({ item }) => {
+              const myReaction = getMyReaction(item);
+              return (
+                <View style={styles.mosaicCell}>
+                  <TouchableOpacity
+                    onPress={() => Linking.openURL(item.convertedUrl)}
+                    onLongPress={() => setReactionTarget(item)}
+                    delayLongPress={400}
+                    activeOpacity={0.85}
+                  >
+                    <Image
+                      source={{ uri: item.thumbnailUrl }}
+                      style={styles.mosaicThumb}
+                    />
+                    <View style={styles.mosaicInfo}>
+                      <Text style={styles.mosaicTitle} numberOfLines={1}>{item.title}</Text>
+                      <Text style={styles.mosaicSender} numberOfLines={1}>{item.senderName}</Text>
+                    </View>
+                  </TouchableOpacity>
+                  {myReaction && (
+                    <TouchableOpacity
+                      style={styles.mosaicReactionBadge}
+                      onPress={() => setReactionTarget(item)}
+                      hitSlop={{ top: 4, right: 4, bottom: 4, left: 4 }}
+                    >
+                      <Text style={styles.mosaicReactionEmoji}>
+                        {REACTIONS.find((r) => r.type === myReaction)?.emoji}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={styles.mosaicDismissBtn}
+                    onPress={() => handleDismiss(item.id)}
+                    hitSlop={{ top: 6, right: 6, bottom: 6, left: 6 }}
+                  >
+                    <Ionicons name="close" size={13} color="#ffffff" />
+                  </TouchableOpacity>
+                </View>
+              );
+            }}
           />
         ) : (
           <View style={styles.center}>
@@ -549,6 +597,51 @@ export default function IndexScreen() {
           </View>
         )
       )}
+
+      {/* Reaction picker modal */}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={!!reactionTarget}
+        onRequestClose={() => setReactionTarget(null)}
+      >
+        <TouchableOpacity
+          style={styles.reactionOverlay}
+          activeOpacity={1}
+          onPress={() => setReactionTarget(null)}
+        >
+          <View style={styles.reactionCard}>
+            {reactionTarget && (
+              <>
+                <Text style={styles.reactionCardTitle} numberOfLines={1}>
+                  {reactionTarget.title}
+                </Text>
+                <Text style={styles.reactionCardArtist} numberOfLines={1}>
+                  {reactionTarget.artist}
+                </Text>
+                <View style={styles.reactionRow}>
+                  {REACTIONS.map(({ type, emoji, label }) => {
+                    const isActive = getMyReaction(reactionTarget) === type;
+                    return (
+                      <TouchableOpacity
+                        key={type}
+                        style={[styles.reactionBtn, isActive && styles.reactionBtnActive]}
+                        onPress={() => handleReact(reactionTarget, isActive ? null : type)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.reactionEmoji}>{emoji}</Text>
+                        <Text style={[styles.reactionLabel, isActive && styles.reactionLabelActive]}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Undo toast */}
       {lastDismissedId && (
@@ -683,4 +776,58 @@ const styles = StyleSheet.create({
   undoToastText: { color: '#aaaaaa', fontSize: 14 },
   undoBtn: { paddingVertical: 4, paddingHorizontal: 10 },
   undoBtnText: { color: '#1db954', fontSize: 14, fontWeight: '700' },
+  mosaicReactionBadge: {
+    position: 'absolute',
+    top: CELL_SIZE - 24,
+    left: 5,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  mosaicReactionEmoji: { fontSize: 13 },
+  reactionOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  reactionCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  reactionCardTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  reactionCardArtist: {
+    color: '#666666',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  reactionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  reactionBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    minWidth: 60,
+  },
+  reactionBtnActive: { backgroundColor: '#2a2a2a' },
+  reactionEmoji: { fontSize: 34, marginBottom: 6 },
+  reactionLabel: { color: '#555555', fontSize: 11, fontWeight: '500' },
+  reactionLabelActive: { color: '#1db954' },
 });

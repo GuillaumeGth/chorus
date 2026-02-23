@@ -2,6 +2,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -16,6 +17,15 @@ import {
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import type { PlatformKey } from './odesli';
+
+export type ReactionType = 'like' | 'superlike' | 'wow' | 'dislike';
+
+export const REACTIONS: Array<{ type: ReactionType; emoji: string; label: string }> = [
+  { type: 'like',      emoji: '❤️',  label: "J'aime" },
+  { type: 'superlike', emoji: '🔥',  label: 'Super' },
+  { type: 'wow',       emoji: '😮',  label: 'Wow' },
+  { type: 'dislike',   emoji: '👎',  label: 'Bof' },
+];
 
 export interface UserProfile {
   uid: string;
@@ -47,6 +57,7 @@ export interface ChatMessage {
   thumbnailUrl: string;
   targetPlatform: PlatformKey;
   createdAt: any;
+  reactions?: Record<string, ReactionType>;
 }
 
 export interface Chat {
@@ -236,6 +247,18 @@ export async function getReceivedMessages(uid: string): Promise<ReceivedMessage[
     })
   );
   return all.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+}
+
+export async function setMessageReaction(
+  chatId: string,
+  msgId: string,
+  uid: string,
+  reaction: ReactionType | null
+): Promise<void> {
+  const ref = doc(db, 'chats', chatId, 'messages', msgId);
+  await updateDoc(ref, {
+    [`reactions.${uid}`]: reaction === null ? deleteField() : reaction,
+  });
 }
 
 export function subscribeToMessages(
