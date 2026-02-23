@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   FlatList,
   Image,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -14,7 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from '../../src/config/firebase';
 import type { Chat, ChatMessage } from '../../src/services/firestore';
-import { subscribeToMessages, subscribeToChats } from '../../src/services/firestore';
+import { subscribeToMessages, subscribeToChats, toggleReaction } from '../../src/services/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { PlatformKey } from '../../src/services/odesli';
 import { fetchLinks } from '../../src/services/odesli';
@@ -28,6 +29,8 @@ const PLATFORM_LABELS: Record<string, string> = {
   tidal: 'Tidal',
 };
 
+const REACTION_EMOJIS = ['❤️', '🔥', '👏', '😂', '😮', '👍'];
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -40,6 +43,7 @@ export default function ChatScreen() {
   const [chat, setChat] = useState<Chat | null>(null);
   const [subError, setSubError] = useState<string | null>(null);
   const [fetchingId, setFetchingId] = useState<string | null>(null);
+  const [pickerMsgId, setPickerMsgId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -100,34 +104,53 @@ export default function ChatScreen() {
     const isMe = item.senderId === uid;
     const listenPlatform = myPlatform ?? item.targetPlatform;
     const isLoading = fetchingId === item.id;
+    const reactions = item.reactions ?? {};
+    const reactionEntries = Object.entries(reactions).filter(([, uids]) => uids.length > 0);
     return (
       <View style={[styles.msgWrapper, isMe ? styles.msgWrapperMe : styles.msgWrapperOther]}>
-        <View style={[styles.card, isMe ? styles.cardMe : styles.cardOther]}>
-          <View style={styles.cardRow}>
-            {!!item.thumbnailUrl && (
-              <Image source={{ uri: item.thumbnailUrl }} style={styles.thumbnail} />
-            )}
+        <TouchableOpacity activeOpacity={1} onLongPress={() => setPickerMsgId(item.id)}>
+          <View style={[styles.card, isMe ? styles.cardMe : styles.cardOther]}>
+            <View style={styles.cardRow}>
+              {!!item.thumbnailUrl && (
+                <Image source={{ uri: item.thumbnailUrl }} style={styles.thumbnail} />
+              )}
+            </View>
+            <View style={styles.cardInfo}>
+              <Text style={styles.songTitle} numberOfLines={2}>{item.title}</Text>
+              <Text style={styles.artist} numberOfLines={1}>{item.artist}</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.listenBtn}
+              onPress={() => handleListen(item)}
+              activeOpacity={0.8}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#000000" />
+              ) : (
+                <Ionicons name="play-circle" size={16} color="#000000" />
+              )}
+              <Text style={styles.listenBtnText}>
+                Écouter sur {PLATFORM_LABELS[listenPlatform] ?? listenPlatform}
+              </Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.cardInfo}>
-            <Text style={styles.songTitle} numberOfLines={2}>{item.title}</Text>
-            <Text style={styles.artist} numberOfLines={1}>{item.artist}</Text>
+        </TouchableOpacity>
+        {reactionEntries.length > 0 && (
+          <View style={[styles.reactionsRow, isMe ? styles.reactionsRowMe : styles.reactionsRowOther]}>
+            {reactionEntries.map(([emoji, uids]) => (
+              <TouchableOpacity
+                key={emoji}
+                style={[styles.reactionPill, uid && uids.includes(uid) && styles.reactionPillActive]}
+                onPress={() => { if (uid && id) toggleReaction(id, item.id, uid, emoji); }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.reactionEmoji}>{emoji}</Text>
+                <Text style={styles.reactionCount}>{uids.length}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-          <TouchableOpacity
-            style={styles.listenBtn}
-            onPress={() => handleListen(item)}
-            activeOpacity={0.8}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#000000" />
-            ) : (
-              <Ionicons name="play-circle" size={16} color="#000000" />
-            )}
-            <Text style={styles.listenBtnText}>
-              Écouter sur {PLATFORM_LABELS[listenPlatform] ?? listenPlatform}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        )}
       </View>
     );
   }
@@ -166,6 +189,36 @@ export default function ChatScreen() {
           </View>
         }
       />
+
+      <Modal
+        visible={pickerMsgId !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPickerMsgId(null)}
+      >
+        <TouchableOpacity
+          style={styles.pickerOverlay}
+          activeOpacity={1}
+          onPress={() => setPickerMsgId(null)}
+        >
+          <View style={styles.pickerContainer}>
+            {REACTION_EMOJIS.map((emoji) => (
+              <TouchableOpacity
+                key={emoji}
+                style={styles.pickerEmojiBtn}
+                onPress={() => {
+                  if (uid && pickerMsgId && id) {
+                    toggleReaction(id, pickerMsgId, uid, emoji);
+                  }
+                  setPickerMsgId(null);
+                }}
+              >
+                <Text style={styles.pickerEmojiText}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -230,4 +283,42 @@ const styles = StyleSheet.create({
   emptyText: { color: '#444444', fontSize: 14, textAlign: 'center', lineHeight: 20 },
   errorBanner: { backgroundColor: '#2d0000', borderRadius: 8, marginHorizontal: 16, marginBottom: 8, padding: 10 },
   errorBannerText: { color: '#ff5555', fontSize: 12, textAlign: 'center' },
+  reactionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
+  reactionsRowMe: { justifyContent: 'flex-end' },
+  reactionsRowOther: { justifyContent: 'flex-start' },
+  reactionPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#1e1e1e',
+    borderWidth: 1,
+    borderColor: '#2e2e2e',
+    borderRadius: 12,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+  },
+  reactionPillActive: {
+    backgroundColor: '#1a2e1e',
+    borderColor: '#1db95460',
+  },
+  reactionEmoji: { fontSize: 14 },
+  reactionCount: { color: '#aaaaaa', fontSize: 11, fontWeight: '600' },
+  pickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#1e1e1e',
+    borderRadius: 32,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#2e2e2e',
+  },
+  pickerEmojiBtn: { padding: 6 },
+  pickerEmojiText: { fontSize: 26 },
 });
