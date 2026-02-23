@@ -1,7 +1,5 @@
 import {
   addDoc,
-  arrayRemove,
-  arrayUnion,
   collection,
   deleteDoc,
   deleteField,
@@ -285,18 +283,3 @@ export function subscribeToMessages(
   );
 }
 
-export async function toggleReaction(
-  chatId: string,
-  messageId: string,
-  uid: string,
-  emoji: string
-): Promise<void> {
-  const ref = doc(db, 'chats', chatId, 'messages', messageId);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return;
-  const current: string[] = snap.data().reactions?.[emoji] ?? [];
-  const isReacted = current.includes(uid);
-  await updateDoc(ref, {
-    [`reactions.${emoji}`]: isReacted ? arrayRemove(uid) : arrayUnion(uid),
-  });
-}

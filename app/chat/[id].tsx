@@ -14,8 +14,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { auth } from '../../src/config/firebase';
-import type { Chat, ChatMessage } from '../../src/services/firestore';
-import { subscribeToMessages, subscribeToChats, toggleReaction } from '../../src/services/firestore';
+import type { Chat, ChatMessage, ReactionType } from '../../src/services/firestore';
+import { subscribeToMessages, subscribeToChats, setMessageReaction, REACTIONS } from '../../src/services/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { PlatformKey } from '../../src/services/odesli';
 import { fetchLinks } from '../../src/services/odesli';
@@ -28,8 +28,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   deezer: 'Deezer',
   tidal: 'Tidal',
 };
-
-const REACTION_EMOJIS = ['❤️', '🔥', '👏', '😂', '😮', '👍'];
 
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -44,6 +42,9 @@ export default function ChatScreen() {
   const [subError, setSubError] = useState<string | null>(null);
   const [fetchingId, setFetchingId] = useState<string | null>(null);
   const [pickerMsgId, setPickerMsgId] = useState<string | null>(null);
+  const [localReactions, setLocalReactions] = useState<Record<string, ReactionType | null>>({});
+
+  const pickerMsg = pickerMsgId ? messages.find((m) => m.id === pickerMsgId) ?? null : null;
 
   useEffect(() => {
     if (!id) return;
@@ -72,6 +73,26 @@ export default function ChatScreen() {
   const otherName = chat
     ? chat.participantInfo[chat.participants.find((p) => p !== uid) ?? '']?.displayName
     : '';
+
+  function getMyReaction(item: ChatMessage): ReactionType | null {
+    if (item.id in localReactions) return localReactions[item.id];
+    return (item.reactions?.[uid ?? ''] as ReactionType) ?? null;
+  }
+
+  async function handleReact(msg: ChatMessage, reaction: ReactionType | null) {
+    if (!uid || !id) return;
+    setLocalReactions((prev) => ({ ...prev, [msg.id]: reaction }));
+    setPickerMsgId(null);
+    try {
+      await setMessageReaction(id, msg.id, uid, reaction);
+    } catch {
+      setLocalReactions((prev) => {
+        const next = { ...prev };
+        delete next[msg.id];
+        return next;
+      });
+    }
+  }
 
   async function handleListen(item: ChatMessage) {
     // Always read the freshest platform preference in case it changed since mount
@@ -104,8 +125,7 @@ export default function ChatScreen() {
     const isMe = item.senderId === uid;
     const listenPlatform = myPlatform ?? item.targetPlatform;
     const isLoading = fetchingId === item.id;
-    const reactions = item.reactions ?? {};
-    const reactionEntries = Object.entries(reactions).filter(([, uids]) => uids.length > 0);
+    const myReaction = getMyReaction(item);
     return (
       <View style={[styles.msgWrapper, isMe ? styles.msgWrapperMe : styles.msgWrapperOther]}>
         <TouchableOpacity activeOpacity={1} onLongPress={() => setPickerMsgId(item.id)}>
@@ -136,19 +156,13 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
-        {reactionEntries.length > 0 && (
-          <View style={[styles.reactionsRow, isMe ? styles.reactionsRowMe : styles.reactionsRowOther]}>
-            {reactionEntries.map(([emoji, uids]) => (
-              <TouchableOpacity
-                key={emoji}
-                style={[styles.reactionPill, uid && uids.includes(uid) && styles.reactionPillActive]}
-                onPress={() => { if (uid && id) toggleReaction(id, item.id, uid, emoji); }}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.reactionEmoji}>{emoji}</Text>
-                <Text style={styles.reactionCount}>{uids.length}</Text>
-              </TouchableOpacity>
-            ))}
+        {myReaction && (
+          <View style={styles.reactionRow}>
+            <View style={styles.reactionBadge}>
+              <Text style={styles.reactionBadgeEmoji}>
+                {REACTIONS.find((r) => r.type === myReaction)?.emoji}
+              </Text>
+            </View>
           </View>
         )}
       </View>
@@ -179,7 +193,7 @@ export default function ChatScreen() {
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
-        extraData={myPlatform}
+        extraData={localReactions}
         contentContainerStyle={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -201,21 +215,31 @@ export default function ChatScreen() {
           activeOpacity={1}
           onPress={() => setPickerMsgId(null)}
         >
-          <View style={styles.pickerContainer}>
-            {REACTION_EMOJIS.map((emoji) => (
-              <TouchableOpacity
-                key={emoji}
-                style={styles.pickerEmojiBtn}
-                onPress={() => {
-                  if (uid && pickerMsgId && id) {
-                    toggleReaction(id, pickerMsgId, uid, emoji);
-                  }
-                  setPickerMsgId(null);
-                }}
-              >
-                <Text style={styles.pickerEmojiText}>{emoji}</Text>
-              </TouchableOpacity>
-            ))}
+          <View style={styles.pickerCard}>
+            {pickerMsg && (
+              <>
+                <Text style={styles.pickerCardTitle} numberOfLines={1}>{pickerMsg.title}</Text>
+                <Text style={styles.pickerCardArtist} numberOfLines={1}>{pickerMsg.artist}</Text>
+                <View style={styles.pickerRow}>
+                  {REACTIONS.map(({ type, emoji, label }) => {
+                    const isActive = getMyReaction(pickerMsg) === type;
+                    return (
+                      <TouchableOpacity
+                        key={type}
+                        style={[styles.pickerBtn, isActive && styles.pickerBtnActive]}
+                        onPress={() => handleReact(pickerMsg, isActive ? null : type)}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.pickerBtnEmoji}>{emoji}</Text>
+                        <Text style={[styles.pickerBtnLabel, isActive && styles.pickerBtnLabelActive]}>
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -249,12 +273,26 @@ const styles = StyleSheet.create({
   msgWrapper: { marginBottom: 16, maxWidth: '85%' },
   msgWrapperMe: { alignSelf: 'flex-end' },
   msgWrapperOther: { alignSelf: 'flex-start' },
-  senderName: { color: '#555555', fontSize: 12, marginBottom: 4, marginLeft: 4 },
   card: { borderRadius: 16, overflow: 'hidden' },
   cardMe: { backgroundColor: '#1a2e1e', borderWidth: 1, borderColor: '#1db95430' },
   cardOther: { backgroundColor: '#1a1a1a' },
   cardRow: { alignItems: 'flex-start', paddingTop: 8, paddingHorizontal: 10 },
   thumbnail: { width: 75, height: 75, borderRadius: 8, backgroundColor: '#2a2a2a' },
+  reactionRow: {
+    alignItems: 'flex-end',
+    marginTop: -10,
+    marginBottom: 4,
+    paddingRight: 6,
+  },
+  reactionBadge: {
+    backgroundColor: '#1e1e1e',
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderWidth: 1.5,
+    borderColor: '#0d0d0d',
+  },
+  reactionBadgeEmoji: { fontSize: 16 },
   cardInfo: { paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4 },
   songTitle: {
     color: '#ffffff',
@@ -283,42 +321,45 @@ const styles = StyleSheet.create({
   emptyText: { color: '#444444', fontSize: 14, textAlign: 'center', lineHeight: 20 },
   errorBanner: { backgroundColor: '#2d0000', borderRadius: 8, marginHorizontal: 16, marginBottom: 8, padding: 10 },
   errorBannerText: { color: '#ff5555', fontSize: 12, textAlign: 'center' },
-  reactionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
-  reactionsRowMe: { justifyContent: 'flex-end' },
-  reactionsRowOther: { justifyContent: 'flex-start' },
-  reactionPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#1e1e1e',
-    borderWidth: 1,
-    borderColor: '#2e2e2e',
-    borderRadius: 12,
-    paddingVertical: 3,
-    paddingHorizontal: 7,
-  },
-  reactionPillActive: {
-    backgroundColor: '#1a2e1e',
-    borderColor: '#1db95460',
-  },
-  reactionEmoji: { fontSize: 14 },
-  reactionCount: { color: '#aaaaaa', fontSize: 11, fontWeight: '600' },
   pickerOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
   },
-  pickerContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#1e1e1e',
-    borderRadius: 32,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    gap: 4,
+  pickerCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    width: '100%',
     borderWidth: 1,
-    borderColor: '#2e2e2e',
+    borderColor: '#2a2a2a',
   },
-  pickerEmojiBtn: { padding: 6 },
-  pickerEmojiText: { fontSize: 26 },
+  pickerCardTitle: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  pickerCardArtist: {
+    color: '#666666',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  pickerRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  pickerBtn: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    minWidth: 60,
+  },
+  pickerBtnActive: { backgroundColor: '#2a2a2a' },
+  pickerBtnEmoji: { fontSize: 34, marginBottom: 6 },
+  pickerBtnLabel: { color: '#555555', fontSize: 11, fontWeight: '500' },
+  pickerBtnLabelActive: { color: '#1db954' },
 });

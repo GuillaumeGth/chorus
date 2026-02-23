@@ -525,6 +525,7 @@ export default function IndexScreen() {
             columnWrapperStyle={styles.mosaicRow}
             contentContainerStyle={styles.mosaicContent}
             style={styles.mosaicList}
+            extraData={localReactions}
             renderItem={({ item }) => {
               const myReaction = getMyReaction(item);
               return (
@@ -535,10 +536,16 @@ export default function IndexScreen() {
                     delayLongPress={400}
                     activeOpacity={0.85}
                   >
-                    <Image
-                      source={{ uri: item.thumbnailUrl }}
-                      style={styles.mosaicThumb}
-                    />
+                    {item.thumbnailUrl ? (
+                      <Image
+                        source={{ uri: item.thumbnailUrl }}
+                        style={styles.mosaicThumb}
+                      />
+                    ) : (
+                      <View style={[styles.mosaicThumb, styles.mosaicThumbPlaceholder]}>
+                        <Ionicons name="musical-notes" size={24} color="#333333" />
+                      </View>
+                    )}
                     <View style={styles.mosaicInfo}>
                       <Text style={styles.mosaicTitle} numberOfLines={1}>{item.title}</Text>
                       <Text style={styles.mosaicSender} numberOfLines={1}>{item.senderName}</Text>
@@ -751,9 +758,19 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   mosaicThumb: { width: CELL_SIZE, height: CELL_SIZE, backgroundColor: '#2a2a2a' },
+  mosaicThumbPlaceholder: { alignItems: 'center', justifyContent: 'center' },
   mosaicInfo: { padding: 6 },
   mosaicTitle: { color: '#ffffff', fontSize: 11, fontWeight: '600' },
   mosaicSender: { color: '#555555', fontSize: 10, marginTop: 2 },
+  mosaicReactionBadge: {
+    position: 'absolute',
+    bottom: 30,
+    right: 5,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    paddingVertical: 3,
+  },
   welcomeTitle: { fontSize: 22, fontWeight: '700', color: '#ffffff', marginBottom: 32, textAlign: 'center' },
   steps: { width: '100%' },
   step: { flexDirection: 'row', alignItems: 'flex-start', gap: 16 },
@@ -776,15 +793,6 @@ const styles = StyleSheet.create({
   undoToastText: { color: '#aaaaaa', fontSize: 14 },
   undoBtn: { paddingVertical: 4, paddingHorizontal: 10 },
   undoBtnText: { color: '#1db954', fontSize: 14, fontWeight: '700' },
-  mosaicReactionBadge: {
-    position: 'absolute',
-    top: CELL_SIZE - 24,
-    left: 5,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    borderRadius: 10,
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-  },
   mosaicReactionEmoji: { fontSize: 13 },
   reactionOverlay: {
     flex: 1,
