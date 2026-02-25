@@ -79,6 +79,16 @@ export default function ChatScreen() {
     return (item.reactions?.[uid ?? ''] as ReactionType) ?? null;
   }
 
+  function getAllReactions(item: ChatMessage): ReactionType[] {
+    const base: Record<string, ReactionType> = { ...(item.reactions ?? {}) };
+    if (item.id in localReactions) {
+      const local = localReactions[item.id];
+      if (local === null) delete base[uid ?? ''];
+      else if (uid) base[uid] = local;
+    }
+    return [...new Set(Object.values(base))] as ReactionType[];
+  }
+
   async function handleReact(msg: ChatMessage, reaction: ReactionType | null) {
     if (!uid || !id) return;
     setLocalReactions((prev) => ({ ...prev, [msg.id]: reaction }));
@@ -125,7 +135,7 @@ export default function ChatScreen() {
     const isMe = item.senderId === uid;
     const listenPlatform = myPlatform ?? item.targetPlatform;
     const isLoading = fetchingId === item.id;
-    const myReaction = getMyReaction(item);
+    const allReactions = getAllReactions(item);
     return (
       <View style={[styles.msgWrapper, isMe ? styles.msgWrapperMe : styles.msgWrapperOther]}>
         <TouchableOpacity activeOpacity={1} onLongPress={() => setPickerMsgId(item.id)}>
@@ -156,13 +166,15 @@ export default function ChatScreen() {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
-        {myReaction && (
+        {allReactions.length > 0 && (
           <View style={styles.reactionRow}>
-            <View style={styles.reactionBadge}>
-              <Text style={styles.reactionBadgeEmoji}>
-                {REACTIONS.find((r) => r.type === myReaction)?.emoji}
-              </Text>
-            </View>
+            {allReactions.map((type) => (
+              <View key={type} style={styles.reactionBadge}>
+                <Text style={styles.reactionBadgeEmoji}>
+                  {REACTIONS.find((r) => r.type === type)?.emoji}
+                </Text>
+              </View>
+            ))}
           </View>
         )}
       </View>
@@ -279,10 +291,13 @@ const styles = StyleSheet.create({
   cardRow: { alignItems: 'flex-start', paddingTop: 8, paddingHorizontal: 10 },
   thumbnail: { width: 75, height: 75, borderRadius: 8, backgroundColor: '#2a2a2a' },
   reactionRow: {
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
     marginTop: -10,
     marginBottom: 4,
     paddingRight: 6,
+    gap: 4,
   },
   reactionBadge: {
     backgroundColor: '#1e1e1e',
