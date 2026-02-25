@@ -74,6 +74,11 @@ export default function ChatScreen() {
     ? chat.participantInfo[chat.participants.find((p) => p !== uid) ?? '']?.displayName
     : '';
 
+  function getMyReaction(item: ChatMessage): ReactionType | null {
+    if (item.id in localReactions) return localReactions[item.id];
+    return (item.reactions?.[uid ?? ''] as ReactionType) ?? null;
+  }
+
   function getAllReactions(item: ChatMessage): ReactionType[] {
     const base: Record<string, ReactionType> = { ...(item.reactions ?? {}) };
     if (item.id in localReactions) {
