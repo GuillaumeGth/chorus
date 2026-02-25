@@ -74,11 +74,6 @@ export default function ChatScreen() {
     ? chat.participantInfo[chat.participants.find((p) => p !== uid) ?? '']?.displayName
     : '';
 
-  function getMyReaction(item: ChatMessage): ReactionType | null {
-    if (item.id in localReactions) return localReactions[item.id];
-    return (item.reactions?.[uid ?? ''] as ReactionType) ?? null;
-  }
-
   function getAllReactions(item: ChatMessage): ReactionType[] {
     const base: Record<string, ReactionType> = { ...(item.reactions ?? {}) };
     if (item.id in localReactions) {
@@ -86,9 +81,7 @@ export default function ChatScreen() {
       if (local === null) delete base[uid ?? ''];
       else if (uid) base[uid] = local;
     }
-    const counts: Partial<Record<ReactionType, number>> = {};
-    for (const r of Object.values(base)) counts[r] = (counts[r] ?? 0) + 1;
-    return Object.entries(counts).map(([type]) => type as ReactionType);
+    return [...new Set(Object.values(base))] as ReactionType[];
   }
 
   async function handleReact(msg: ChatMessage, reaction: ReactionType | null) {
