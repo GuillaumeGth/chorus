@@ -1,13 +1,11 @@
 # Réactions aux morceaux
 
-## Vue d'ensemble
-
 Les réactions permettent à l'utilisateur d'exprimer son ressenti sur un morceau reçu, depuis la mosaïque d'accueil ou depuis un chat. Le système est unifié : même modèle de données, même picker, même affichage visuel dans les deux contextes.
 
 ## Réactions disponibles
 
 | Type | Emoji | Label |
-|------|-------|-------|
+|---|---|---|
 | `like` | ❤️ | J'aime |
 | `superlike` | 🔥 | Super |
 | `wow` | 😮 | Wow |
@@ -37,7 +35,7 @@ export const REACTIONS: Array<{ type: ReactionType; emoji: string; label: string
 
 ## Affichage
 
-Le badge est positionné en absolu (`position: 'absolute', bottom: 4, left: 4`) au-dessus de la vignette (thumbnail). Il affiche uniquement la réaction de l'utilisateur courant.
+Le badge est positionné en absolu (`position: 'absolute', bottom: 4, left: 4`) au-dessus de la vignette (thumbnail). Il affiche toutes les réactions de tous les participants.
 
 - Fond semi-transparent : `rgba(0,0,0,0.55)`
 - Taille emoji : 13
@@ -84,7 +82,7 @@ Pour un retour visuel immédiat, les deux écrans maintiennent un état local `l
 ## Fichiers concernés
 
 | Fichier | Rôle |
-|---------|------|
+|---|---|
 | `src/services/firestore.ts` | Types `ReactionType`, constante `REACTIONS`, fonction `setMessageReaction` |
 | `app/index.tsx` | Réactions sur la mosaïque d'accueil |
 | `app/chat/[id].tsx` | Réactions dans les conversations |

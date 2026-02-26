@@ -5,6 +5,8 @@ React Native app (Expo 54, expo-router) for sharing music between friends across
 
 **Core flow:** Alice (Spotify) shares a track → chooses Bob in Chørus → Chørus converts to Bob's platform (YouTube Music) → sends the converted link in a chat → Bob opens it directly in his app.
 
+**Functional specs:** [`docs/spec.md`](docs/spec.md)
+
 ## Tech stack
 - **Expo 54** with **expo-router 6** (file-based routing, `"main": "expo-router/entry"`)
 - **Firebase** (JS SDK v12) – Firestore (users, chats, messages) + Auth (Google Sign-In)

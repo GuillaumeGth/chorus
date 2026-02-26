@@ -9,6 +9,7 @@ import {
   addDoc,
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -37,6 +38,7 @@ import {
   getFollowing,
   getReceivedMessages,
   subscribeToMessages,
+  setMessageReaction,
   type UserProfile,
   type ChatMessage,
   type FollowEntry,
@@ -52,6 +54,7 @@ jest.mock('firebase/firestore', () => ({
   addDoc:          jest.fn(),
   collection:      jest.fn(),
   deleteDoc:       jest.fn(),
+  deleteField:     jest.fn(),
   doc:             jest.fn(),
   getDoc:          jest.fn(),
   getDocs:         jest.fn(),
@@ -100,6 +103,7 @@ beforeEach(() => {
   (where          as jest.Mock).mockReturnValue('__WHERE__');
   (orderBy        as jest.Mock).mockReturnValue('__ORDER__');
   (limit          as jest.Mock).mockReturnValue('__LIMIT__');
+  (deleteField    as jest.Mock).mockReturnValue('__DELETE_FIELD__');
   mockSetDoc.mockResolvedValue(undefined);
   mockGetDoc.mockResolvedValue(docSnap(false));
   mockGetDocs.mockResolvedValue(querySnap([]));
@@ -619,5 +623,53 @@ describe('subscribeToMessages', () => {
     mockOnSnapshot.mockReturnValue(unsub);
 
     expect(subscribeToMessages('chat1', jest.fn())).toBe(unsub);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setMessageReaction
+// ---------------------------------------------------------------------------
+
+describe('setMessageReaction', () => {
+  it('calls updateDoc on the correct messages path', async () => {
+    await setMessageReaction('chat1', 'msg1', 'alice', 'like');
+
+    expect(mockDoc).toHaveBeenCalledWith('__DB__', 'chats', 'chat1', 'messages', 'msg1');
+    expect(mockUpdateDoc).toHaveBeenCalledWith('__DOC__', { 'reactions.alice': 'like' });
+  });
+
+  it('stores the reaction type as the field value', async () => {
+    await setMessageReaction('chat1', 'msg1', 'alice', 'superlike');
+
+    const [, data] = mockUpdateDoc.mock.calls[0];
+    expect(data['reactions.alice']).toBe('superlike');
+  });
+
+  it('uses deleteField() when reaction is null (remove reaction)', async () => {
+    await setMessageReaction('chat1', 'msg1', 'alice', null);
+
+    expect(deleteField).toHaveBeenCalled();
+    const [, data] = mockUpdateDoc.mock.calls[0];
+    expect(data['reactions.alice']).toBe('__DELETE_FIELD__');
+  });
+
+  it('scopes the reaction field to the user UID (different users independent)', async () => {
+    await setMessageReaction('chat1', 'msg1', 'bob', 'wow');
+
+    const [, data] = mockUpdateDoc.mock.calls[0];
+    expect(Object.keys(data)).toEqual(['reactions.bob']);
+  });
+
+  it('supports all reaction types', async () => {
+    for (const reaction of ['like', 'superlike', 'wow', 'dislike'] as const) {
+      jest.resetAllMocks();
+      mockDoc.mockReturnValue('__DOC__');
+      mockUpdateDoc.mockResolvedValue(undefined);
+
+      await setMessageReaction('chat1', 'msg1', 'alice', reaction);
+
+      const [, data] = mockUpdateDoc.mock.calls[0];
+      expect(data['reactions.alice']).toBe(reaction);
+    }
   });
 });
