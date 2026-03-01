@@ -13,3 +13,4 @@
 | 8 | Notifications push | [spec/08-notifications.md](spec/08-notifications.md) |
 | 9 | Modèle de données | [spec/09-data-model.md](spec/09-data-model.md) |
 | 10 | États d'erreur | [spec/10-errors.md](spec/10-errors.md) |
+| 11 | Playlists collaboratives | [spec/11-collaborative-playlists.md](spec/11-collaborative-playlists.md) |
