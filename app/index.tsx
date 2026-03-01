@@ -327,6 +327,9 @@ export default function IndexScreen() {
           <TouchableOpacity onPress={() => router.push('/contacts')} style={styles.iconBtn}>
             <Ionicons name="people-outline" size={22} color="#ffffff" />
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push('/playlists')} style={styles.iconBtn}>
+            <Ionicons name="albums-outline" size={22} color="#ffffff" />
+          </TouchableOpacity>
           <TouchableOpacity onPress={() => router.push('/chats')} style={styles.iconBtn}>
             <Ionicons name="chatbubbles-outline" size={22} color="#ffffff" />
           </TouchableOpacity>
