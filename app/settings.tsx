@@ -6,7 +6,7 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../src/config/firebase';
 import type { PlatformKey } from '../src/services/odesli';
 import { usePlatformPreference } from '../src/hooks/usePlatformPreference';
-import { updateUserPlatform } from '../src/services/firestore';
+import { updateUserPlatform, removePushToken } from '../src/services/firestore';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -36,6 +36,8 @@ export default function SettingsScreen() {
   }
 
   async function handleSignOut() {
+    const uid = auth.currentUser?.uid;
+    if (uid) await removePushToken(uid);
     await signOut(auth);
     router.replace('/auth');
   }

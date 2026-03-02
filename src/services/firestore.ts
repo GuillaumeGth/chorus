@@ -97,6 +97,10 @@ export async function savePushToken(uid: string, token: string): Promise<void> {
   await setDoc(doc(db, 'users', uid), { expoPushToken: token }, { merge: true });
 }
 
+export async function removePushToken(uid: string): Promise<void> {
+  await updateDoc(doc(db, 'users', uid), { expoPushToken: deleteField() });
+}
+
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
   const snap = await getDoc(doc(db, 'users', uid));
   return snap.exists() ? (snap.data() as UserProfile) : null;
