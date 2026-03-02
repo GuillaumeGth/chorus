@@ -12,6 +12,7 @@
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -25,8 +26,15 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
+import type { FieldValue } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import type { PlatformKey } from './odesli';
+import { fetchLinks, type PlatformKey } from './odesli';
+
+/**
+ * Write shape for a new track document.
+ * `addedAt` is sent as a FieldValue (serverTimestamp) and resolved to Timestamp on read.
+ */
+type PlaylistTrackWrite = Omit<PlaylistTrack, 'id' | 'addedAt'> & { addedAt: FieldValue };
 
 export type PlaylistRole = 'owner' | 'editor' | 'viewer';
 
@@ -52,6 +60,19 @@ export interface Playlist {
     addedByName: string;
     addedAt: Timestamp;
   };
+}
+
+export interface PlaylistInvitation {
+  id: string;
+  playlistId: string;
+  playlistName: string;
+  invitedBy: string;
+  invitedByName: string;
+  invitedByPhoto: string | null;
+  invitedUid: string;
+  role: 'editor' | 'viewer';
+  status: 'pending' | 'accepted' | 'declined';
+  createdAt: Timestamp;
 }
 
 export interface PlaylistTrack {
@@ -115,15 +136,21 @@ export async function deletePlaylist(playlistId: string): Promise<void> {
   await deleteDoc(doc(db, 'playlists', playlistId));
 }
 
-/** Updates playlist name and/or description. Only callable by the owner. */
+/**
+ * Updates playlist name and/or description. Only callable by the owner.
+ * Passing `description: undefined` removes the field from Firestore (clears it).
+ */
 export async function updatePlaylistInfo(
   playlistId: string,
   updates: { name?: string; description?: string },
 ): Promise<void> {
-  await updateDoc(doc(db, 'playlists', playlistId), {
-    ...updates,
-    updatedAt: serverTimestamp(),
-  });
+  const payload: Record<string, unknown> = { updatedAt: serverTimestamp() };
+  if (updates.name !== undefined) payload.name = updates.name;
+  // Use deleteField() to clear description when explicitly passed as undefined/empty.
+  if ('description' in updates) {
+    payload.description = updates.description || deleteField();
+  }
+  await updateDoc(doc(db, 'playlists', playlistId), payload);
 }
 
 /**
@@ -279,6 +306,124 @@ export async function setInviteLinkActive(playlistId: string, active: boolean): 
     inviteLinkActive: active,
     updatedAt: serverTimestamp(),
   });
+}
+
+/**
+ * Adds a track to a playlist.
+ * Resolves the raw music URL via Odesli to obtain metadata and cross-platform links,
+ * writes the track document, then atomically updates `trackCount`, `lastTrack`,
+ * and `updatedAt` on the parent playlist.
+ *
+ * `position` is set to `Date.now()` (ms) — monotonically increasing, unique in practice,
+ * and requires no transaction. Gaps from deletions do not affect sort order.
+ *
+ * @throws If Odesli cannot resolve the URL (unrecognised link).
+ */
+export async function addTrackToPlaylist(
+  playlistId: string,
+  uid: string,
+  displayName: string,
+  photoURL: string | null,
+  url: string,
+): Promise<void> {
+  const result = await fetchLinks(url);
+
+  const trackRef = doc(collection(db, 'playlists', playlistId, 'tracks'));
+  const trackData: PlaylistTrackWrite = {
+    addedBy: uid,
+    addedByName: displayName,
+    addedByPhoto: photoURL,
+    addedAt: serverTimestamp(),
+    title: result.title,
+    artist: result.artist,
+    thumbnailUrl: result.thumbnailUrl,
+    originalUrl: url,
+    platformLinks: result.platformLinks,
+    position: Date.now(),
+  };
+  await setDoc(trackRef, trackData);
+
+  await updateDoc(doc(db, 'playlists', playlistId), {
+    trackCount: increment(1),
+    lastTrack: {
+      title: result.title,
+      artist: result.artist,
+      thumbnailUrl: result.thumbnailUrl,
+      addedByName: displayName,
+      addedAt: serverTimestamp(),
+    },
+    updatedAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Sends a playlist invitation to a Chorus user.
+ * No-ops if the user is already a member or already has a pending invitation.
+ */
+export async function sendInvitation(
+  playlistId: string,
+  playlistName: string,
+  invitedBy: string,
+  invitedByName: string,
+  invitedByPhoto: string | null,
+  invitedUid: string,
+  role: 'editor' | 'viewer',
+): Promise<void> {
+  const playlistSnap = await getDoc(doc(db, 'playlists', playlistId));
+  if (playlistSnap.exists()) {
+    const playlist = playlistSnap.data() as Playlist;
+    if (playlist.memberUids.includes(invitedUid)) return;
+  }
+  const ref = doc(collection(db, 'invitations'));
+  await setDoc(ref, {
+    id: ref.id,
+    playlistId,
+    playlistName,
+    invitedBy,
+    invitedByName,
+    invitedByPhoto,
+    invitedUid,
+    role,
+    status: 'pending',
+    createdAt: serverTimestamp(),
+  });
+}
+
+/**
+ * Accepts or declines a pending invitation.
+ * Only updates the invitation status — a Firebase Function (onInvitationAccepted)
+ * reacts to status='accepted' and adds the user to the playlist with admin privileges,
+ * since the invitee is not yet a member and cannot update the playlist directly.
+ */
+export async function respondToInvitation(
+  invitationId: string,
+  accept: boolean,
+): Promise<void> {
+  await updateDoc(doc(db, 'invitations', invitationId), {
+    status: accept ? 'accepted' : 'declined',
+  });
+}
+
+/** Real-time subscription to pending invitations for a given user. */
+export function subscribeToMyInvitations(
+  uid: string,
+  callback: (invitations: PlaylistInvitation[]) => void,
+): () => void {
+  return onSnapshot(
+    query(
+      collection(db, 'invitations'),
+      where('invitedUid', '==', uid),
+      where('status', '==', 'pending'),
+    ),
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as PlaylistInvitation)));
+    },
+  );
+}
+
+/** Owner cancels a pending invitation. */
+export async function cancelInvitation(invitationId: string): Promise<void> {
+  await deleteDoc(doc(db, 'invitations', invitationId));
 }
 
 /**

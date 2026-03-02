@@ -15,10 +15,12 @@ service cloud.firestore {
       }
     }
 
-    // Playlists : accessible uniquement aux membres
+    // Playlists : accessible aux membres, et en lecture seule aux non-membres si le lien d'invitation est actif
+    // (nécessaire pour que joinPlaylistByCode puisse trouver la playlist via inviteCode)
     match /playlists/{playlistId} {
       allow read: if request.auth != null
-        && request.auth.uid in resource.data.memberUids;
+        && (request.auth.uid in resource.data.memberUids
+            || resource.data.inviteLinkActive == true);
 
       allow create: if request.auth != null
         && request.resource.data.createdBy == request.auth.uid
@@ -52,6 +54,26 @@ service cloud.firestore {
 
         allow update: if false;
       }
+    }
+
+    // Invitations : lisibles par l'invité et l'inviteur, créées par l'inviteur, mises à jour par l'invité
+    match /invitations/{invitationId} {
+      allow read: if request.auth != null
+        && (request.auth.uid == resource.data.invitedUid
+            || request.auth.uid == resource.data.invitedBy);
+
+      allow create: if request.auth != null
+        && request.resource.data.invitedBy == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      allow update: if request.auth != null
+        && request.auth.uid == resource.data.invitedUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.status in ['accepted', 'declined'];
+
+      allow delete: if request.auth != null
+        && request.auth.uid == resource.data.invitedBy
+        && resource.data.status == 'pending';
     }
 
     // Chats : accessible uniquement aux participants

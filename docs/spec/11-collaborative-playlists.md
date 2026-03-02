@@ -38,6 +38,22 @@ Une playlist Chørus est une collection de morceaux **indépendante de toute pla
 }
 ```
 
+### `invitations/{invitationId}`
+
+```ts
+{
+  playlistId: string,
+  playlistName: string,
+  invitedBy: uid,
+  invitedByName: string,
+  invitedByPhoto: string | null,
+  invitedUid: uid,
+  role: 'editor' | 'viewer',
+  status: 'pending' | 'accepted' | 'declined',
+  createdAt: Timestamp,
+}
+```
+
 ### `playlists/{playlistId}/tracks/{trackId}`
 
 ```ts
@@ -119,18 +135,18 @@ Flow :
 
 Bouton **"+ Ajouter"** dans l'écran playlist → modal de recherche.
 
-**API : Spotify Search avec Client Credentials (pas d'auth utilisateur requise)**
+**API : Deezer Search publique (aucune authentification requise)**
 
 ```
 [Recherche "Daft Punk Random Access"]
-    → Spotify Search API (client_credentials)
-    → Résultats : [{title, artist, thumbnail, spotifyUrl}]
+    → Deezer Search API (API publique, pas de credentials)
+    → Résultats : [{title, artist, thumbnail, deezerUrl}]
     → Tap sur un résultat
-    → Odesli(spotifyUrl) → platformLinks complets
+    → Odesli(deezerUrl) → platformLinks complets
     → Track ajouté à la playlist
 ```
 
-Les credentials Spotify (client_id, client_secret) sont stockés côté app ou via un proxy serverless. Ils sont distincts des tokens OAuth utilisateur (export).
+Implémenté dans `src/services/musicSearch.ts`. La spec initiale envisageait Spotify Client Credentials (client_id + client_secret) ; Deezer a été retenu car son API de recherche est entièrement publique — pas de secret à gérer côté client ni de proxy serveur nécessaire.
 
 ### Chemin 3 : Coller un lien manuellement
 
@@ -260,10 +276,12 @@ src/services/export/
 | Route | Description |
 |-------|-------------|
 | `playlists.tsx` | Liste de mes playlists (owner + membre), bouton créer |
-| `playlist/[id].tsx` | Détail : tracks, bouton ajouter, bouton exporter, accès membres |
+| `playlist/[id]/index.tsx` | Détail : tracks, bouton ajouter, bouton exporter, accès membres |
 | `playlist/new.tsx` | Formulaire création : nom, description, rôle d'invitation par défaut |
 | `playlist/[id]/members.tsx` | Liste des membres, gestion des rôles, invitation (owner uniquement) |
 | `playlist/join/[code].tsx` | Confirmation avant de rejoindre via un lien d'invitation |
+
+> Note : `playlist/[id]` est un sous-répertoire (layout stack via `playlist/[id]/_layout.tsx`) pour pouvoir empiler `index` et `members` dans le même stack navigator.
 
 ### Modifications des écrans existants
 
@@ -275,12 +293,12 @@ src/services/export/
 
 ## Nouveaux hooks
 
-| Hook | Rôle |
-|------|------|
+| Hook / service | Rôle |
+|----------------|------|
 | `usePlaylists` | Liste temps-réel des playlists dont l'uid est membre (`array-contains`) |
 | `usePlaylist(id)` | Détail + tracks temps-réel d'une playlist |
 | `usePlaylistRole(id)` | Rôle de l'utilisateur courant dans la playlist (`'owner' \| 'editor' \| 'viewer' \| null`) |
-| `useMusicSearch` | Recherche catalogue via Spotify Search API (client credentials) |
+| `musicSearch.ts` (service) | Recherche catalogue via l'API Deezer publique — `searchTracks(query): Promise<MusicSearchResult[]>` |
 | `usePlaylistExport` | Machine d'état de l'export OAuth : `idle → authenticating → creating → adding → done \| error` |
 
 ---
@@ -306,11 +324,13 @@ setInviteLinkActive(playlistId, active): Promise<void>
 
 ## Notifications push
 
-| Événement | Destinataires | Contenu |
-|-----------|--------------|---------|
-| Morceau ajouté | Tous les membres sauf l'auteur | "X a ajouté [titre] à [playlist]" |
-| Invitation reçue | L'invité | "X t'a invité à rejoindre [playlist]" |
-| Rôle modifié | Le membre concerné | "Ton rôle dans [playlist] est maintenant [rôle]" |
+| Événement | Destinataires | Contenu | Firebase Function |
+|-----------|--------------|---------|------------------|
+| Morceau ajouté | Tous les membres sauf l'auteur | "X a ajouté [titre] — [artiste]" | `onTrackAdded` |
+| Invitation créée | L'invité | "X t'a invité dans « playlist »" | `onInvitationCreated` |
+| Membre ajouté | Le nouveau membre (après acceptation) | "Tu as été invité à une playlist" | `onMemberAdded` |
+
+> Note : la spec initiale prévoyait une notification "Rôle modifié". Ce cas n'est pas implémenté — `onMemberAdded` couvre uniquement l'ajout de nouveaux membres (diff `memberUids` avant/après).
 
 ---
 
@@ -338,14 +358,14 @@ setInviteLinkActive(playlistId, active): Promise<void>
 - Gestion des rôles (owner controls)
 - Notifications push pour les événements collaboratifs
 
-### Phase 4 — Export OAuth
+### Phase 4 — Export OAuth ✅
 
 - Interface `PlatformExporter` + `usePlaylistExport`
-- Spotify (API la plus documentée — point d'entrée)
-- YouTube Music (réutilise le token Google existant)
-- Deezer (API la plus simple)
-- Tidal
-- Apple Music (le plus contraignant — entitlement + JWT)
+- Spotify (API la plus documentée — point d'entrée) ✅
+- YouTube Music (réutilise le token Google existant) ✅
+- Deezer (API la plus simple) ✅
+- Tidal ✅
+- Apple Music (le plus contraignant — entitlement + JWT) ⏳ Phase 4b — stub uniquement
 
 ---
 

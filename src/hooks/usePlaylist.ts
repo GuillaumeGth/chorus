@@ -1,3 +1,14 @@
+/**
+ * usePlaylist — real-time detail for a single collaborative playlist.
+ *
+ * Opens two parallel Firestore subscriptions:
+ *   1. `playlists/{playlistId}` → playlist metadata + member map
+ *   2. `playlists/{playlistId}/tracks` ordered by `position asc` → track list
+ *
+ * Both subscriptions are cleaned up together when the component unmounts or
+ * `playlistId` changes. `playlist` is null if the document does not exist or
+ * the user is not a member (Firestore rules deny the read).
+ */
 import { useEffect, useState } from 'react';
 import {
   subscribeToPlaylist,

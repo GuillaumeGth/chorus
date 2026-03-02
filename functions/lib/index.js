@@ -1,9 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onNewMessage = void 0;
+exports.onNewMessage = exports.onInvitationAccepted = exports.onInvitationCreated = exports.onTrackAdded = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 admin.initializeApp();
+var onTrackAdded_1 = require("./onTrackAdded");
+Object.defineProperty(exports, "onTrackAdded", { enumerable: true, get: function () { return onTrackAdded_1.onTrackAdded; } });
+var onInvitationCreated_1 = require("./onInvitationCreated");
+Object.defineProperty(exports, "onInvitationCreated", { enumerable: true, get: function () { return onInvitationCreated_1.onInvitationCreated; } });
+var onInvitationAccepted_1 = require("./onInvitationAccepted");
+Object.defineProperty(exports, "onInvitationAccepted", { enumerable: true, get: function () { return onInvitationAccepted_1.onInvitationAccepted; } });
 const db = admin.firestore();
 exports.onNewMessage = (0, firestore_1.onDocumentCreated)('chats/{chatId}/messages/{msgId}', async (event) => {
     const msg = event.data?.data();

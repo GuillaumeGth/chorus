@@ -97,7 +97,8 @@
           "color": "#1db954",
           "androidMode": "default"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "scheme": "chorus",
     "extra": {

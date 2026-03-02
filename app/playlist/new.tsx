@@ -1,3 +1,19 @@
+/**
+ * NewPlaylistScreen — /playlist/new
+ *
+ * Form to create a new collaborative playlist.
+ *
+ * Fields:
+ *   - name (required, max 80 chars)
+ *   - description (optional, max 200 chars)
+ *   - inviteRole: default role granted to users who join via invite link
+ *       'viewer' — read/listen only
+ *       'editor' — can add tracks
+ *
+ * On submit:
+ *   createPlaylist() generates a unique 6-char inviteCode and sets the creator
+ *   as 'owner'. On success, navigates to the new playlist detail screen.
+ */
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';

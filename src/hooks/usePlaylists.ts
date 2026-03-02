@@ -1,3 +1,10 @@
+/**
+ * usePlaylists — real-time list of collaborative playlists for the current user.
+ *
+ * Subscribes to `playlists` where `memberUids array-contains uid`, ordered by
+ * `updatedAt desc`. Re-subscribes when the authenticated user changes.
+ * Returns an empty array (not null) while unauthenticated.
+ */
 import { useEffect, useState } from 'react';
 import { subscribeToMyPlaylists, type Playlist } from '../services/playlists';
 import { useAuth } from './useAuth';

@@ -2,6 +2,10 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import * as admin from 'firebase-admin';
 
 admin.initializeApp();
+
+export { onTrackAdded } from './onTrackAdded';
+export { onInvitationCreated }  from './onInvitationCreated';
+export { onInvitationAccepted } from './onInvitationAccepted';
 const db = admin.firestore();
 
 export const onNewMessage = onDocumentCreated(

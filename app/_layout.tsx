@@ -90,29 +90,30 @@ function AuthGate() {
     })();
   }, [user]);
 
-  // Tap on notification → navigate to chat
+  // Tap on notification → navigate to chat, playlists (invitation), or playlist
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const chatId = response.notification.request.content.data?.chatId as string | undefined;
-      if (chatId) {
-        router.navigate(`/chat/${chatId}`);
-      }
+      const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+      const chatId     = data?.chatId     as string | undefined;
+      const playlistId = data?.playlistId as string | undefined;
+      const type       = data?.type       as string | undefined;
+      if (chatId)                    router.navigate(`/chat/${chatId}`);
+      else if (type === 'invitation') router.navigate('/playlists');
+      else if (playlistId)           router.navigate(`/playlist/${playlistId}`);
     });
     return () => sub.remove();
   }, []);
 
-  // Android intent filter — intercept music URLs
+  // Intercept incoming music URLs → home
   useEffect(() => {
-    Linking.getInitialURL().then((url) => {
-      if (url && isMusicUrl(url)) {
-        router.navigate(`/?incomingUrl=${encodeURIComponent(url)}`);
-      }
-    });
-    const sub = Linking.addEventListener('url', ({ url }) => {
+    function handleUrl(url: string) {
       if (isMusicUrl(url)) {
         router.navigate(`/?incomingUrl=${encodeURIComponent(url)}`);
       }
-    });
+    }
+
+    Linking.getInitialURL().then((url) => { if (url) handleUrl(url); });
+    const sub = Linking.addEventListener('url', ({ url }) => handleUrl(url));
     return () => sub.remove();
   }, []);
 
