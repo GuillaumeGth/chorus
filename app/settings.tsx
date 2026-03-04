@@ -5,18 +5,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { signOut } from 'firebase/auth';
 import { auth } from '../src/config/firebase';
 import type { PlatformKey } from '../src/services/odesli';
+import { enabledPlatforms } from '../src/config/platforms';
 import { usePlatformPreference } from '../src/hooks/usePlatformPreference';
 import { updateUserPlatform } from '../src/services/firestore';
 
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 
-const PLATFORMS: { key: PlatformKey; label: string; icon: IoniconsName }[] = [
-  { key: 'spotify', label: 'Spotify', icon: 'musical-notes-outline' },
-  { key: 'appleMusic', label: 'Apple Music', icon: 'musical-note-outline' },
-  { key: 'youtubeMusic', label: 'YouTube Music', icon: 'play-circle-outline' },
-  { key: 'deezer', label: 'Deezer', icon: 'radio-outline' },
-  { key: 'tidal', label: 'Tidal', icon: 'water-outline' },
+const ALL_PLATFORMS: { key: PlatformKey; label: string; icon: IoniconsName }[] = [
+  { key: 'spotify',      label: 'Spotify',        icon: 'musical-notes-outline' },
+  { key: 'appleMusic',   label: 'Apple Music',     icon: 'musical-note-outline' },
+  { key: 'youtubeMusic', label: 'YouTube Music',   icon: 'play-circle-outline' },
+  { key: 'deezer',       label: 'Deezer',          icon: 'radio-outline' },
+  { key: 'tidal',        label: 'Tidal',           icon: 'water-outline' },
 ];
+
+const PLATFORMS = ALL_PLATFORMS.filter((p) => enabledPlatforms[p.key]);
 
 export default function SettingsScreen() {
   const { platform, setPlatform } = usePlatformPreference();

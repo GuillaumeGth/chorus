@@ -22,7 +22,7 @@
  *   editor — can add tracks, delete own tracks only
  *   viewer — read only (listen + export)
  */
-import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
@@ -54,6 +54,7 @@ import {
 } from '../../../src/services/playlists';
 import { SearchTrackModal } from '../../../src/components/SearchTrackModal';
 import type { PlatformKey } from '../../../src/services/odesli';
+import { enabledPlatforms } from '../../../src/config/platforms';
 
 const DELETE_HIT_SLOP = { top: 8, right: 8, bottom: 8, left: 8 } as const;
 
@@ -65,15 +66,29 @@ const PLATFORM_NAMES: Record<PlatformKey, string> = {
   tidal:        'Tidal',
 };
 
-/** Platforms available for export (Apple Music deferred). */
-const EXPORTABLE_PLATFORMS: PlatformKey[] = ['spotify', 'youtubeMusic', 'deezer', 'tidal'];
+/** Platforms available for export — driven by enabledPlatforms (src/config/platforms.ts). */
+const EXPORTABLE_PLATFORMS = (Object.keys(enabledPlatforms) as PlatformKey[]).filter(
+  (p) => enabledPlatforms[p] && p !== 'appleMusic',
+);
 
-const PLATFORM_ICONS: Record<PlatformKey, 'logo-youtube' | 'musical-notes' | 'musical-note'> = {
-  spotify:      'musical-notes',
-  youtubeMusic: 'logo-youtube',
-  appleMusic:   'musical-note',
-  deezer:       'musical-notes',
-  tidal:        'musical-notes',
+/** Renders the brand icon for a platform. FA5 brands for Spotify/YTM/Deezer/Apple; Ionicons fallback for Tidal (no FA5 glyph). */
+function PlatformIcon({ platform, size }: { platform: PlatformKey; size: number }) {
+  const color = PLATFORM_COLORS[platform];
+  switch (platform) {
+    case 'spotify':      return <FontAwesome5 name="spotify"  size={size} color={color} brand />;
+    case 'youtubeMusic': return <FontAwesome5 name="youtube"  size={size} color={color} brand />;
+    case 'deezer':       return <FontAwesome5 name="deezer"   size={size} color={color} brand />;
+    case 'appleMusic':   return <FontAwesome5 name="apple"    size={size} color={color} brand />;
+    case 'tidal':        return <Ionicons     name="musical-notes" size={size} color={color} />;
+  }
+}
+
+const PLATFORM_COLORS: Record<PlatformKey, string> = {
+  spotify:      '#1DB954',
+  youtubeMusic: '#FF0000',
+  appleMusic:   '#FC3C44',
+  deezer:       '#EF5466',
+  tidal:        '#00FECC',
 };
 
 function TrackRow({
@@ -475,7 +490,7 @@ export default function PlaylistDetailScreen() {
                     style={styles.exportPlatformItem}
                     onPress={() => exportHook.exportTo(p)}
                   >
-                    <Ionicons name={PLATFORM_ICONS[p]} size={20} color="#1db954" />
+                    <PlatformIcon platform={p} size={20} />
                     <Text style={styles.exportPlatformName}>{PLATFORM_NAMES[p]}</Text>
                     <Ionicons name="chevron-forward" size={16} color="#555555" />
                   </TouchableOpacity>
@@ -697,7 +712,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingTop: 20,
+    paddingTop: 10,
     paddingHorizontal: 20,
     gap: 4,
   },
@@ -744,10 +759,10 @@ const styles = StyleSheet.create({
   exportHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#2a2a2a',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   exportPlatformList: { gap: 2, marginBottom: 8 },
   exportPlatformItem: {
