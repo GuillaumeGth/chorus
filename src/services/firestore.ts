@@ -56,6 +56,7 @@ export interface ChatMessage {
   artist: string;
   thumbnailUrl: string;
   targetPlatform: PlatformKey;
+  caption?: string;
   createdAt: any;
   reactions?: Record<string, ReactionType>;
 }

@@ -148,6 +148,9 @@ export default function ChatScreen() {
             <View style={styles.cardInfo}>
               <Text style={styles.songTitle} numberOfLines={2}>{item.title}</Text>
               <Text style={styles.artist} numberOfLines={1}>{item.artist}</Text>
+              {!!item.caption && (
+                <Text style={styles.caption}>{item.caption}</Text>
+              )}
             </View>
             <TouchableOpacity
               style={styles.listenBtn}
@@ -318,6 +321,12 @@ const styles = StyleSheet.create({
   artist: {
     color: '#666666',
     fontSize: 12,
+  },
+  caption: {
+    color: '#aaaaaa',
+    fontSize: 13,
+    marginTop: 6,
+    lineHeight: 18,
   },
   listenBtn: {
     flexDirection: 'row',

@@ -102,6 +102,7 @@ export default function IndexScreen() {
   const [selectedContact, setSelectedContact] = useState<FollowEntry | null>(null);
   const [sending, setSending] = useState(false);
   const [contactsLoaded, setContactsLoaded] = useState(false);
+  const [caption, setCaption] = useState('');
 
   const { messages: receivedMessages, loading: receivedLoading } = useReceivedMessages();
   const { dismissed, dismiss, undismiss } = useDismissedMessages();
@@ -256,6 +257,7 @@ export default function IndexScreen() {
         selectedContact.photoURL
       );
 
+      const trimmedCaption = caption.trim();
       await sendMusicMessage(chatId, {
         senderId: currentUser.uid,
         senderName: currentUser.displayName ?? currentUser.email ?? 'Moi',
@@ -266,6 +268,7 @@ export default function IndexScreen() {
         artist: flow.result.artist,
         thumbnailUrl: flow.result.thumbnailUrl,
         targetPlatform: selectedContact.platform,
+        ...(trimmedCaption ? { caption: trimmedCaption } : {}),
       });
 
       router.push(`/chat/${chatId}`);
@@ -305,6 +308,7 @@ export default function IndexScreen() {
     flow.reset();
     setSelectedContact(null);
     setSearchQuery('');
+    setCaption('');
     setFollowedContacts([]);
     setContactsLoaded(false);
   }
@@ -460,10 +464,21 @@ export default function IndexScreen() {
               sending ? (
                 <ActivityIndicator color="#1db954" style={{ marginBottom: 12 }} />
               ) : (
-                <TouchableOpacity style={styles.primaryBtn} onPress={handleSendToContact} activeOpacity={0.8}>
-                  <Ionicons name="paper-plane" size={16} color="#000000" />
-                  <Text style={styles.primaryBtnText}>Envoyer à {selectedContact.displayName}</Text>
-                </TouchableOpacity>
+                <>
+                  <TextInput
+                    style={styles.captionInput}
+                    placeholder="Ajouter un message… (optionnel)"
+                    placeholderTextColor="#444444"
+                    value={caption}
+                    onChangeText={setCaption}
+                    maxLength={200}
+                    multiline
+                  />
+                  <TouchableOpacity style={styles.primaryBtn} onPress={handleSendToContact} activeOpacity={0.8}>
+                    <Ionicons name="paper-plane" size={16} color="#000000" />
+                    <Text style={styles.primaryBtnText}>Envoyer à {selectedContact.displayName}</Text>
+                  </TouchableOpacity>
+                </>
               )
             ) : (
               <>
@@ -734,6 +749,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#1db95415', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, marginBottom: 20,
   },
   recipientText: { color: '#1db954', fontSize: 13, fontWeight: '600' },
+  captionInput: {
+    width: '100%',
+    backgroundColor: '#121212',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    color: '#ffffff',
+    fontSize: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
+    minHeight: 44,
+    maxHeight: 100,
+    textAlignVertical: 'top',
+  },
   primaryBtn: {
     backgroundColor: '#1db954', borderRadius: 30, paddingHorizontal: 36, paddingVertical: 14,
     width: '100%', alignItems: 'center', marginBottom: 12, flexDirection: 'row', justifyContent: 'center', gap: 8,
